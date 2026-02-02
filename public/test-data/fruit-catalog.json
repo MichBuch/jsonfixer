@@ -1,0 +1,57 @@
+{
+  "view": {
+    "name": "Fruit Catalog",
+    "version": "1.0",
+    "classes": {
+      "apple": {
+        "productDesc": "Premium apple varieties from certified orchards",
+        "attributes": [
+          {
+            "name": "Granny Smith",
+            "vitaminC": "12%",
+            "colour": "green",
+            "edible": true,
+            "classification": ["deciduous", "winterHarvest", "tart"],
+            "sourceCountry": "Australia",
+            "fruitCode": "APL-GS-001",
+            "fruitQuality": "A",
+            "season": "autumn",
+            "packaging": "bulk-crate",
+            "shelfLife": "21"
+          },
+          {
+            "name": "Royal Gala",
+            "vitaminC": "8%",
+            "colour": "red",
+            "edible": true,
+            "classification": ["deciduous", "summerHarvest", "sweet"],
+            "sourceCountry": "New Zealand",
+            "fruitCode": "APL-RG-002",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "retail-box",
+            "shelfLife": "14"
+          }
+        ]
+      },
+      "orange": {
+        "productDesc": "Citrus varieties with high vitamin content",
+        "attributes": [
+          {
+            "name": "Valencia",
+            "vitaminC": "80%",
+            "colour": "orange",
+            "edible": true,
+            "classification": ["citrus", "evergreen", "juice"],
+            "sourceCountry": "Spain",
+            "fruitCode": "ORG-VL-001",
+            "fruitQuality": "A",
+            "season": "spring",
+            "packaging": "mesh-bag",
+            "shelfLife": "28"
+          }
+        ]
+      }
+    }
+  }
+}

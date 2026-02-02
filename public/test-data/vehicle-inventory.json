@@ -1,0 +1,45 @@
+{
+  "view": {
+    "name": "Vehicle Inventory",
+    "version": "2.1",
+    "classes": {
+      "car": {
+        "productDesc": "Passenger vehicles for road use",
+        "attributes": [
+          {
+            "make": "Toyota",
+            "model": "Camry",
+            "country": "Japan",
+            "usage": "sedan",
+            "numberOfWheels": 4,
+            "topSpeed": 180,
+            "classification": ["passenger", "midSize", "hybrid"]
+          },
+          {
+            "make": "Ford",
+            "model": "F-150",
+            "country": "USA",
+            "usage": "pickup",
+            "numberOfWheels": 4,
+            "topSpeed": 170,
+            "classification": ["commercial", "lightDuty", "truck"]
+          }
+        ]
+      },
+      "motorcycle": {
+        "productDesc": "Two-wheel motor vehicles",
+        "attributes": [
+          {
+            "make": "Honda",
+            "model": "CBR600",
+            "country": "Japan",
+            "usage": "sport",
+            "numberOfWheels": 2,
+            "topSpeed": 260,
+            "classification": ["sport", "supersport"]
+          }
+        ]
+      }
+    }
+  }
+}

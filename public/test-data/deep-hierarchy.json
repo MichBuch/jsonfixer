@@ -1,0 +1,37 @@
+{
+  "view": {
+    "name": "Data Classification View",
+    "version": "1.0",
+    "classes": {
+      "product": {
+        "productDesc": "Product classification with nested attributes",
+        "attributes": [
+          {
+            "name": "apple",
+            "productDesc": "Deciduous fruit variety",
+            "attributes": [
+              {
+                "name": "Granny Smith",
+                "vitaminC": "80%",
+                "colour": "red",
+                "edible": true,
+                "classification": ["deciduous", "winterHarvest", "tart"],
+                "metadata": {
+                  "sourceCountry": "Australia",
+                  "fruitCode": "APL-GS-001",
+                  "fruitQuality": "A",
+                  "season": "autumn",
+                  "packaging": {
+                    "type": "bulk-crate",
+                    "shelfLife": "21",
+                    "units": "kg"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
