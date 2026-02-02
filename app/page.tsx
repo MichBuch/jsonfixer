@@ -2,8 +2,32 @@
 
 import { useState, useCallback } from "react";
 import JsonEditor from "./components/JsonEditor";
+import { fruitCatalog, vehicleInventory, deepHierarchy } from "./test-data";
 
 type JsonObject = { [key: string]: unknown };
+type JsonValue = string | number | boolean | null | JsonObject | unknown[];
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function shuffleJson(obj: JsonValue): JsonValue {
+  if (Array.isArray(obj)) {
+    return shuffleArray(obj.map((v) => shuffleJson(v as JsonValue)));
+  }
+  if (obj !== null && typeof obj === "object") {
+    const keys = shuffleArray(Object.keys(obj as JsonObject));
+    const out: JsonObject = {};
+    keys.forEach((k) => (out[k] = shuffleJson((obj as JsonObject)[k] as JsonValue)));
+    return out;
+  }
+  return obj;
+}
 
 function syntaxHighlight(json: string): string {
   return json
@@ -16,11 +40,78 @@ function syntaxHighlight(json: string): string {
     .replace(/\b(-?\d+\.?\d*)\b/g, "<span class='number'>$1</span>");
 }
 
+function validateJsonValue(val: unknown, path: string): string[] {
+  const errs: string[] = [];
+  if (val === undefined) {
+    errs.push(`${path}: undefined not allowed`);
+    return errs;
+  }
+  if (typeof val === "string") {
+    if (/[\x00-\x1f]/.test(val)) errs.push(`${path}: control characters in string`);
+    return errs;
+  }
+  if (Array.isArray(val)) {
+    val.forEach((v, i) => errs.push(...validateJsonValue(v, `${path}[${i}]`)));
+    return errs;
+  }
+  if (val !== null && typeof val === "object") {
+    for (const k of Object.keys(val)) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(k)) errs.push(`${path}.${k}: invalid key chars`);
+      errs.push(...validateJsonValue((val as JsonObject)[k], `${path}.${k}`));
+    }
+  }
+  return errs;
+}
+
 export default function Page() {
   const [sourceData, setSourceData] = useState<JsonObject | null>(null);
   const [editedData, setEditedData] = useState<JsonObject | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const validate = useCallback(() => {
+    if (!editedData) {
+      setValidation({ ok: false, msg: "No data loaded" });
+      return;
+    }
+    try {
+      JSON.parse(JSON.stringify(editedData));
+      const errs = validateJsonValue(editedData, "root");
+      if (errs.length) {
+        setValidation({ ok: false, msg: errs.join("; ") });
+      } else {
+        setValidation({ ok: true, msg: "Valid JSON. No control chars. Safe for API/DB." });
+      }
+    } catch (e) {
+      setValidation({ ok: false, msg: String(e) });
+    }
+  }, [editedData]);
+
+  const sortFruitNames = useCallback(() => {
+    if (!editedData) return;
+    const view = editedData.view as JsonObject | undefined;
+    const classes = view?.classes as JsonObject | undefined;
+    if (!classes) return;
+    const keys = Object.keys(classes).sort((a, b) => a.localeCompare(b));
+    const sorted: JsonObject = {};
+    keys.forEach((k) => (sorted[k] = classes[k]));
+    Object.keys(classes).forEach((k) => delete classes[k]);
+    Object.assign(classes, sorted);
+    setEditedData(JSON.parse(JSON.stringify(editedData)));
+  }, [editedData]);
+
+  const saveCopy = useCallback(() => {
+    if (!editedData || !sourceFileName) return;
+    const base = sourceFileName.replace(/\.json$/i, "");
+    const name = `${base}_copy.json`;
+    const blob = new Blob([JSON.stringify(editedData, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, [editedData, sourceFileName]);
 
   const handleFileLoad = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,21 +136,19 @@ export default function Page() {
     e.target.value = "";
   }, []);
 
-  const loadTestFile = useCallback((path: string) => {
+  const loadTestFile = useCallback((which: "fruit" | "cars" | "deep") => {
     setLoadError(null);
-    fetch(path)
-      .then((r) => r.json())
-      .then((parsed: JsonObject) => {
-        setSourceData(parsed);
-        setEditedData(JSON.parse(JSON.stringify(parsed)));
-        const name = path.split("/").pop() || "test.json";
-        setSourceFileName(name);
-      })
-      .catch((err) => {
-        setLoadError(String(err));
-        setSourceData(null);
-        setEditedData(null);
-      });
+    try {
+      const parsed = which === "fruit" ? fruitCatalog : which === "cars" ? vehicleInventory : deepHierarchy;
+      const data = JSON.parse(JSON.stringify(parsed)) as JsonObject;
+      setSourceData(JSON.parse(JSON.stringify(data)));
+      setEditedData(JSON.parse(JSON.stringify(data)));
+      setSourceFileName(which === "fruit" ? "fruit-catalog.json" : which === "cars" ? "vehicle-inventory.json" : "deep-hierarchy.json");
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
+      setSourceData(null);
+      setEditedData(null);
+    }
   }, []);
 
   return (
@@ -69,15 +158,17 @@ export default function Page() {
           Load JSON file
           <input type="file" accept=".json" onChange={handleFileLoad} />
         </label>
-        <button onClick={() => loadTestFile("/test-data/fruit-catalog.json")}>
-          Load fruit test
-        </button>
-        <button onClick={() => loadTestFile("/test-data/vehicle-inventory.json")}>
-          Load cars test
-        </button>
-        <button onClick={() => loadTestFile("/test-data/deep-hierarchy.json")}>
-          Load deep hierarchy test
-        </button>
+        <button onClick={() => loadTestFile("fruit")}>Load fruit test</button>
+        <button onClick={() => loadTestFile("cars")}>Load cars test</button>
+        <button onClick={() => loadTestFile("deep")}>Load deep hierarchy test</button>
+        <button onClick={sortFruitNames} disabled={!editedData}>Sort fruit names A-Z</button>
+        <button onClick={validate}>Validate</button>
+        <button onClick={saveCopy} disabled={!sourceFileName}>Save as _copy.json</button>
+        {validation && (
+          <span className={validation.ok ? "validation-ok" : "validation-err"}>
+            {validation.msg}
+          </span>
+        )}
         {loadError && <span className="validation-err">{loadError}</span>}
       </div>
 
@@ -95,23 +186,11 @@ export default function Page() {
             </div>
           </div>
           <div className="pane">
-            <div className="pane-header">Editor (drag ↑↓, sort ⇅, add +, delete ×)</div>
+            <div className="pane-header">Editor: click to select, right-click → Sort A-Z</div>
             <div className="pane-content">
               <JsonEditor
                 data={editedData}
-                onChange={setEditedData}
-                sourceFileName={sourceFileName}
-              />
-            </div>
-          </div>
-          <div className="pane">
-            <div className="pane-header">Edited output</div>
-            <div className="pane-content">
-              <pre
-                className="json-raw"
-                dangerouslySetInnerHTML={{
-                  __html: syntaxHighlight(JSON.stringify(editedData, null, 2)),
-                }}
+                onChange={(next) => setEditedData(next)}
               />
             </div>
           </div>

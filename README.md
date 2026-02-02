@@ -5,10 +5,16 @@ Client-side JSON editor for large, deeply nested files. No server upload—all p
 ## Features
 
 - **Load**: File picker or test data (fruit, cars, deep hierarchy)
-- **Edit**: Tree view with drag (↑↓), sort (⇅), add (+), delete (×)
+- **Edit**: Tree view with drag (↑↓), add (+), delete (×)
+- **Sort**: Double-click to select, right-click → Sort A→Z, Z→A, numerical ↑↓ (at selected level only; source unchanged)
 - **Compare**: Side-by-side source | editor | output
 - **Save**: Downloads as `{filename}_copy.json`
 - **Validate**: JSON validity + control-char check for API/DB safety
+
+## Deployment
+
+- **Demo**: Deploy to Vercel for web demo (client-side only)
+- **Production**: Run locally behind firewall (`npm run build && npm start`)
 
 ## Tech
 

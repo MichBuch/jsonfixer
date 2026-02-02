@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3101",
+    "fresh": "node -e \"try{require('fs').rmSync('.next',{recursive:1,force:1})}catch(e){}\" && next dev -p 3101",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

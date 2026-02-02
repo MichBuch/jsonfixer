@@ -34,6 +34,179 @@
           }
         ]
       },
+      "banana": {
+        "productDesc": "Tropical bananas from equatorial regions",
+        "attributes": [
+          {
+            "name": "Cavendish",
+            "vitaminC": "15%",
+            "colour": "yellow",
+            "edible": true,
+            "classification": ["tropical", "herbaceous", "sweet"],
+            "sourceCountry": "Ecuador",
+            "fruitCode": "BAN-CV-001",
+            "fruitQuality": "A",
+            "season": "yearRound",
+            "packaging": "bunch",
+            "shelfLife": "7"
+          },
+          {
+            "name": "Lady Finger",
+            "vitaminC": "18%",
+            "colour": "yellow",
+            "edible": true,
+            "classification": ["tropical", "dessert", "sweet"],
+            "sourceCountry": "Philippines",
+            "fruitCode": "BAN-LF-002",
+            "fruitQuality": "A",
+            "season": "yearRound",
+            "packaging": "retail-bunch",
+            "shelfLife": "5"
+          }
+        ]
+      },
+      "grape": {
+        "productDesc": "Table and wine grapes from temperate regions",
+        "attributes": [
+          {
+            "name": "Thompson Seedless",
+            "vitaminC": "10%",
+            "colour": "green",
+            "edible": true,
+            "classification": ["vine", "table", "sweet"],
+            "sourceCountry": "Chile",
+            "fruitCode": "GRP-TS-001",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "clamshell",
+            "shelfLife": "14"
+          },
+          {
+            "name": "Crimson Seedless",
+            "vitaminC": "11%",
+            "colour": "red",
+            "edible": true,
+            "classification": ["vine", "table", "sweet"],
+            "sourceCountry": "South Africa",
+            "fruitCode": "GRP-CS-002",
+            "fruitQuality": "A",
+            "season": "autumn",
+            "packaging": "bag",
+            "shelfLife": "10"
+          }
+        ]
+      },
+      "grenadilla": {
+        "productDesc": "Passion fruit varieties, tangy and aromatic",
+        "attributes": [
+          {
+            "name": "Purple Passion",
+            "vitaminC": "72%",
+            "colour": "purple",
+            "edible": true,
+            "classification": ["tropical", "vine", "tart"],
+            "sourceCountry": "Colombia",
+            "fruitCode": "GRN-PP-001",
+            "fruitQuality": "A",
+            "season": "yearRound",
+            "packaging": "bulk-tray",
+            "shelfLife": "21"
+          }
+        ]
+      },
+      "guava": {
+        "productDesc": "Tropical guavas with high vitamin C",
+        "attributes": [
+          {
+            "name": "Pink Guava",
+            "vitaminC": "228%",
+            "colour": "pink",
+            "edible": true,
+            "classification": ["tropical", "evergreen", "aromatic"],
+            "sourceCountry": "India",
+            "fruitCode": "GUV-PK-001",
+            "fruitQuality": "A",
+            "season": "autumn",
+            "packaging": "bulk-crate",
+            "shelfLife": "5"
+          },
+          {
+            "name": "White Guava",
+            "vitaminC": "209%",
+            "colour": "white",
+            "edible": true,
+            "classification": ["tropical", "evergreen", "sweet"],
+            "sourceCountry": "Mexico",
+            "fruitCode": "GUV-WH-002",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "retail-box",
+            "shelfLife": "4"
+          }
+        ]
+      },
+      "kiwi": {
+        "productDesc": "Fuzzy and gold kiwifruit varieties",
+        "attributes": [
+          {
+            "name": "Hayward",
+            "vitaminC": "112%",
+            "colour": "green",
+            "edible": true,
+            "classification": ["vine", "temperate", "tart"],
+            "sourceCountry": "New Zealand",
+            "fruitCode": "KIW-HW-001",
+            "fruitQuality": "A",
+            "season": "autumn",
+            "packaging": "tray",
+            "shelfLife": "42"
+          },
+          {
+            "name": "Gold",
+            "vitaminC": "103%",
+            "colour": "yellow",
+            "edible": true,
+            "classification": ["vine", "temperate", "sweet"],
+            "sourceCountry": "Italy",
+            "fruitCode": "KIW-GD-002",
+            "fruitQuality": "A",
+            "season": "autumn",
+            "packaging": "tray",
+            "shelfLife": "35"
+          }
+        ]
+      },
+      "mango": {
+        "productDesc": "Tropical mangoes, the king of fruits",
+        "attributes": [
+          {
+            "name": "Kent",
+            "vitaminC": "46%",
+            "colour": "yellow",
+            "edible": true,
+            "classification": ["tropical", "stone", "sweet"],
+            "sourceCountry": "Peru",
+            "fruitCode": "MNG-KT-001",
+            "fruitQuality": "A",
+            "season": "spring",
+            "packaging": "bulk-crate",
+            "shelfLife": "14"
+          },
+          {
+            "name": "Keitt",
+            "vitaminC": "60%",
+            "colour": "green",
+            "edible": true,
+            "classification": ["tropical", "stone", "sweet"],
+            "sourceCountry": "Brazil",
+            "fruitCode": "MNG-KE-002",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "retail-box",
+            "shelfLife": "10"
+          }
+        ]
+      },
       "orange": {
         "productDesc": "Citrus varieties with high vitamin content",
         "attributes": [
@@ -49,6 +222,184 @@
             "season": "spring",
             "packaging": "mesh-bag",
             "shelfLife": "28"
+          },
+          {
+            "name": "Navel",
+            "vitaminC": "89%",
+            "colour": "orange",
+            "edible": true,
+            "classification": ["citrus", "evergreen", "table"],
+            "sourceCountry": "USA",
+            "fruitCode": "ORG-NV-002",
+            "fruitQuality": "A",
+            "season": "winter",
+            "packaging": "bag",
+            "shelfLife": "21"
+          }
+        ]
+      },
+      "peach": {
+        "productDesc": "Stone fruit, fuzzy and juicy",
+        "attributes": [
+          {
+            "name": "Yellow Peach",
+            "vitaminC": "11%",
+            "colour": "yellow",
+            "edible": true,
+            "classification": ["deciduous", "stone", "sweet"],
+            "sourceCountry": "Spain",
+            "fruitCode": "PCH-YL-001",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "bulk-crate",
+            "shelfLife": "7"
+          },
+          {
+            "name": "White Peach",
+            "vitaminC": "9%",
+            "colour": "white",
+            "edible": true,
+            "classification": ["deciduous", "stone", "sweet"],
+            "sourceCountry": "Italy",
+            "fruitCode": "PCH-WH-002",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "retail-box",
+            "shelfLife": "5"
+          }
+        ]
+      },
+      "pear": {
+        "productDesc": "European and Asian pear varieties",
+        "attributes": [
+          {
+            "name": "Conference",
+            "vitaminC": "5%",
+            "colour": "green",
+            "edible": true,
+            "classification": ["deciduous", "temperate", "sweet"],
+            "sourceCountry": "Belgium",
+            "fruitCode": "PR-CF-001",
+            "fruitQuality": "A",
+            "season": "autumn",
+            "packaging": "bulk-crate",
+            "shelfLife": "21"
+          },
+          {
+            "name": "Packham",
+            "vitaminC": "6%",
+            "colour": "green",
+            "edible": true,
+            "classification": ["deciduous", "temperate", "sweet"],
+            "sourceCountry": "South Africa",
+            "fruitCode": "PR-PK-002",
+            "fruitQuality": "A",
+            "season": "autumn",
+            "packaging": "retail-box",
+            "shelfLife": "14"
+          }
+        ]
+      },
+      "pineapple": {
+        "productDesc": "Tropical pineapples, sweet and tangy",
+        "attributes": [
+          {
+            "name": "MD2",
+            "vitaminC": "79%",
+            "colour": "yellow",
+            "edible": true,
+            "classification": ["tropical", "bromeliad", "sweet"],
+            "sourceCountry": "Costa Rica",
+            "fruitCode": "PNA-MD-001",
+            "fruitQuality": "A",
+            "season": "yearRound",
+            "packaging": "single",
+            "shelfLife": "14"
+          },
+          {
+            "name": "Queen",
+            "vitaminC": "58%",
+            "colour": "yellow",
+            "edible": true,
+            "classification": ["tropical", "bromeliad", "sweet"],
+            "sourceCountry": "South Africa",
+            "fruitCode": "PNA-QN-002",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "single",
+            "shelfLife": "10"
+          }
+        ]
+      },
+      "nectarine": {
+        "productDesc": "Smooth-skinned stone fruit, related to peach",
+        "attributes": [
+          {
+            "name": "Fantasia",
+            "vitaminC": "8%",
+            "colour": "red",
+            "edible": true,
+            "classification": ["deciduous", "stone", "sweet"],
+            "sourceCountry": "USA",
+            "fruitCode": "NEC-FN-001",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "bulk-crate",
+            "shelfLife": "7"
+          }
+        ]
+      },
+      "plum": {
+        "productDesc": "Stone fruit, European and Japanese varieties",
+        "attributes": [
+          {
+            "name": "Santa Rosa",
+            "vitaminC": "16%",
+            "colour": "purple",
+            "edible": true,
+            "classification": ["deciduous", "stone", "sweet"],
+            "sourceCountry": "Chile",
+            "fruitCode": "PLM-SR-001",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "bulk-crate",
+            "shelfLife": "10"
+          }
+        ]
+      },
+      "strawberry": {
+        "productDesc": "Berries from temperate regions",
+        "attributes": [
+          {
+            "name": "Camarosa",
+            "vitaminC": "97%",
+            "colour": "red",
+            "edible": true,
+            "classification": ["berry", "temperate", "sweet"],
+            "sourceCountry": "Spain",
+            "fruitCode": "STRB-CM-001",
+            "fruitQuality": "A",
+            "season": "spring",
+            "packaging": "clamshell",
+            "shelfLife": "5"
+          }
+        ]
+      },
+      "watermelon": {
+        "productDesc": "Large melons, high water content",
+        "attributes": [
+          {
+            "name": "Crimson Sweet",
+            "vitaminC": "14%",
+            "colour": "red",
+            "edible": true,
+            "classification": ["melon", "vine", "sweet"],
+            "sourceCountry": "USA",
+            "fruitCode": "WTM-CS-001",
+            "fruitQuality": "A",
+            "season": "summer",
+            "packaging": "bulk",
+            "shelfLife": "14"
           }
         ]
       }

@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 type JsonObject = { [key: string]: JsonValue };
 type JsonArray = JsonValue[];
+
+type SortMode = "a-z" | "z-a" | "num-asc" | "num-desc";
 
 function isObject(v: JsonValue): v is JsonObject {
   return v !== null && typeof v === "object" && !Array.isArray(v);
@@ -12,6 +14,36 @@ function isObject(v: JsonValue): v is JsonObject {
 
 function isArray(v: JsonValue): v is JsonArray {
   return Array.isArray(v);
+}
+
+function sortAtLevel(value: JsonObject | JsonArray, mode: SortMode): void {
+  if (isObject(value)) {
+    const keys = Object.keys(value);
+    const sorted = keys.sort((a, b) => {
+      if (mode === "a-z") return a.localeCompare(b);
+      if (mode === "z-a") return b.localeCompare(a);
+      const na = parseFloat(a);
+      const nb = parseFloat(b);
+      if (!isNaN(na) && !isNaN(nb)) {
+        return mode === "num-asc" ? na - nb : nb - na;
+      }
+      return mode === "num-asc" ? a.localeCompare(b) : b.localeCompare(a);
+    });
+    const copy = sorted.map((k) => [k, value[k]] as const);
+    sorted.forEach((k) => delete value[k]);
+    copy.forEach(([k, v]) => (value as JsonObject)[k] = v);
+  } else if (isArray(value)) {
+    value.sort((a, b) => {
+      if (mode === "a-z") return JSON.stringify(a).localeCompare(JSON.stringify(b));
+      if (mode === "z-a") return JSON.stringify(b).localeCompare(JSON.stringify(a));
+      const na = typeof a === "number" ? a : parseFloat(String(a));
+      const nb = typeof b === "number" ? b : parseFloat(String(b));
+      if (!isNaN(na) && !isNaN(nb)) {
+        return mode === "num-asc" ? na - nb : nb - na;
+      }
+      return JSON.stringify(a).localeCompare(JSON.stringify(b));
+    });
+  }
 }
 
 function validateJsonValue(val: unknown, path: string): string[] {
@@ -44,10 +76,13 @@ interface TreeNodeProps {
   parent: JsonObject | JsonArray;
   parentKey: string | number;
   onUpdate: () => void;
+  selectedPath: string | null;
+  onSelect: (path: string) => void;
+  onContextMenuOpen: (path: string, value: JsonObject | JsonArray, e: React.MouseEvent, parent?: JsonObject | JsonArray) => void;
   depth?: number;
 }
 
-function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, depth = 0 }: TreeNodeProps) {
+function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedPath, onSelect, onContextMenuOpen, depth = 0 }: TreeNodeProps) {
   const [dragOver, setDragOver] = useState(false);
   const [dragging, setDragging] = useState(false);
   const isArrayParent = Array.isArray(parent);
@@ -158,18 +193,21 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, depth = 0
   if (isObject(value) || isArray(value)) {
     const keys = isArray(value) ? value.map((_, i) => String(i)) : Object.keys(value);
     const isObj = isObject(value);
+    const isSelected = selectedPath === path;
     return (
       <div className={`tree-node ${depth === 0 ? "tree-node-root" : ""}`}>
         <div
-          className={`tree-key ${dragging ? "dragging" : ""} ${dragOver ? "drag-over" : ""}`}
+          className={`tree-key ${dragging ? "dragging" : ""} ${dragOver ? "drag-over" : ""} ${isSelected ? "selected" : ""}`}
           draggable={isArrayParent}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
+          onClick={() => onSelect(path)}
+          onContextMenu={(e) => { e.preventDefault(); onSelect(path); onContextMenuOpen(path, value as JsonObject | JsonArray, e, parent); }}
         >
-          <span className="key-name">{JSON.stringify(keyName)}:</span>
+          {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
           <span className="key-value">{isObj ? "{" : "["}</span>
           <span className="tree-actions">
             {isArrayParent && (
@@ -178,7 +216,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, depth = 0
                 <button onClick={moveDown} disabled={idx >= (parent as JsonArray).length - 1} title="Move down">↓</button>
               </>
             )}
-            <button onClick={sortAlpha} title="Sort alphabetically">⇅</button>
+            <button onClick={sortAlpha} title="Sort A-Z">⇅</button>
             <button onClick={addChild} title="Add child">+</button>
             <button onClick={deleteNode} title="Delete">×</button>
           </span>
@@ -192,6 +230,9 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, depth = 0
             parent={value as JsonObject | JsonArray}
             parentKey={isArray(value) ? parseInt(k, 10) : k}
             onUpdate={onUpdate}
+            selectedPath={selectedPath}
+            onSelect={onSelect}
+            onContextMenuOpen={onContextMenuOpen}
             depth={depth + 1}
           />
         ))}
@@ -223,7 +264,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, depth = 0
   return (
     <div className="tree-node">
       <div className="tree-key">
-        <span className="key-name">{JSON.stringify(keyName)}:</span>
+        {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
         {editing ? (
           <input
             autoFocus
@@ -252,48 +293,42 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, depth = 0
 export default function JsonEditor({
   data,
   onChange,
-  sourceFileName,
 }: {
   data: Record<string, unknown> | null;
   onChange: (d: Record<string, unknown>) => void;
-  sourceFileName: string | null;
 }) {
-  const [validation, setValidation] = useState<{ ok: boolean; msg: string } | null>(null);
-
+  const dataRef = useRef(data);
+  dataRef.current = data;
   const triggerUpdate = useCallback(() => {
-    onChange(JSON.parse(JSON.stringify(data)));
-  }, [data, onChange]);
+    onChange(JSON.parse(JSON.stringify(dataRef.current)) as Record<string, unknown>);
+  }, [onChange]);
 
-  const validate = useCallback(() => {
-    if (!data) {
-      setValidation({ ok: false, msg: "No data loaded" });
-      return;
-    }
-    try {
-      const str = JSON.stringify(data);
-      JSON.parse(str);
-      const errs = validateJsonValue(data, "root");
-      if (errs.length) {
-        setValidation({ ok: false, msg: errs.join("; ") });
-      } else {
-        setValidation({ ok: true, msg: "Valid JSON. No control chars. Safe for API/DB." });
-      }
-    } catch (e) {
-      setValidation({ ok: false, msg: String(e) });
-    }
-  }, [data]);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const sortTargetRef = useRef<JsonObject | JsonArray | null>(null);
 
-  const saveCopy = useCallback(() => {
-    if (!data || !sourceFileName) return;
-    const base = sourceFileName.replace(/\.json$/i, "");
-    const name = `${base}_copy.json`;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [data, sourceFileName]);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => { sortTargetRef.current = null; setContextMenu(null); };
+    const t = setTimeout(() => window.addEventListener("click", close), 0);
+    return () => { clearTimeout(t); window.removeEventListener("click", close); };
+  }, [contextMenu]);
+
+  const handleContextMenuOpen = useCallback((path: string, value: JsonObject | JsonArray, e: React.MouseEvent, parent?: JsonObject | JsonArray) => {
+    setSelectedPath(path);
+    sortTargetRef.current = parent || value;
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleSort = useCallback((mode: SortMode) => {
+    const target = sortTargetRef.current;
+    if (target) {
+      sortAtLevel(target, mode);
+      sortTargetRef.current = null;
+      triggerUpdate();
+    }
+    setContextMenu(null);
+  }, [triggerUpdate]);
 
   if (!data) return null;
 
@@ -301,22 +336,8 @@ export default function JsonEditor({
   const keys = Object.keys(dataObj);
   return (
     <div>
-      <div className="toolbar">
-        <button onClick={validate}>Validate</button>
-        <button onClick={saveCopy} disabled={!sourceFileName}>Save as _copy.json</button>
-        {validation && (
-          <span className={validation.ok ? "validation-ok" : "validation-err"}>
-            {validation.msg}
-          </span>
-        )}
-      </div>
       <div className="tree-node tree-node-root">
-        <div className="tree-key">
-          <span className="key-name">{"{root}"}</span>
-          <span className="tree-actions">
-            <button onClick={() => { dataObj["newKey"] = ""; triggerUpdate(); }} title="Add">+</button>
-          </span>
-        </div>
+        <div className="key-value">{"{"}</div>
         {keys.map((k) => (
           <TreeNode
             key={k}
@@ -326,10 +347,24 @@ export default function JsonEditor({
             parent={dataObj}
             parentKey={k}
             onUpdate={triggerUpdate}
-            depth={1}
+            selectedPath={selectedPath}
+            onSelect={setSelectedPath}
+            onContextMenuOpen={handleContextMenuOpen}
+            depth={0}
           />
         ))}
+        <div className="key-value">{"}"}</div>
       </div>
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z"); }}>Sort A-Z</button>
+        </div>
+      )}
     </div>
   );
 }
