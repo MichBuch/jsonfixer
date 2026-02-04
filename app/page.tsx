@@ -71,6 +71,9 @@ export default function Page() {
   const [validation, setValidation] = useState<{ ok: boolean; msg: string } | null>(null);
   const [sortMode, setSortMode] = useState<"by-key" | "by-value">("by-key");
   const [sortByPath, setSortByPath] = useState<string>("");
+  const [sortContainer, setSortContainer] = useState<string>("");
+  const [sortValuePath, setSortValuePath] = useState<string>("");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const validate = useCallback(() => {
     if (!editedData) {
@@ -151,22 +154,58 @@ export default function Page() {
         <button onClick={() => loadTestFile("cars")}>Load cars test</button>
         <button onClick={() => loadTestFile("deep")}>Load deep hierarchy test</button>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "none", border: "none", padding: 0 }}>
-            <span>Sort by:</span>
-            <select value={sortMode} onChange={(e) => setSortMode(e.target.value as "by-key" | "by-value")} style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-              <option value="by-key">Attribute name</option>
-              <option value="by-value">Attribute value</option>
-            </select>
-          </label>
-          {sortMode === "by-value" && (
-            <input
-              type="text"
-              placeholder="e.g. engine.size"
-              value={sortByPath}
-              onChange={(e) => setSortByPath(e.target.value)}
-              style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px", minWidth: "150px" }}
-            />
-          )}
+          <input
+            type="text"
+            placeholder="Container (e.g. cars)"
+            value={sortContainer}
+            onChange={(e) => setSortContainer(e.target.value)}
+            style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px", minWidth: "120px" }}
+          />
+          <input
+            type="text"
+            placeholder="Sort by (e.g. engine.power)"
+            value={sortValuePath}
+            onChange={(e) => setSortValuePath(e.target.value)}
+            style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px", minWidth: "150px" }}
+          />
+          <select value={sortDirection} onChange={(e) => setSortDirection(e.target.value as "asc" | "desc")} style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px" }}>
+            <option value="asc">A→Z</option>
+            <option value="desc">Z→A</option>
+          </select>
+          <button onClick={() => {
+            if (!editedData || !sortContainer || !sortValuePath) return;
+            const parts = sortContainer.split(".");
+            let target: any = editedData;
+            for (const p of parts) {
+              if (!target[p]) return;
+              target = target[p];
+            }
+            if (typeof target === "object" && !Array.isArray(target)) {
+              const keys = Object.keys(target).sort((a, b) => {
+                const getVal = (obj: any, path: string) => {
+                  const ps = path.split(".");
+                  let v: any = obj;
+                  for (const pp of ps) {
+                    if (v && typeof v === "object") v = v[pp];
+                    else return null;
+                  }
+                  return v;
+                };
+                const valA = getVal(target[a], sortValuePath);
+                const valB = getVal(target[b], sortValuePath);
+                const strA = valA === null ? "" : String(valA);
+                const strB = valB === null ? "" : String(valB);
+                return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+              });
+              const sorted: any = {};
+              keys.forEach(k => sorted[k] = target[k]);
+              Object.keys(target).forEach(k => delete target[k]);
+              Object.assign(target, sorted);
+              setEditedData(JSON.parse(JSON.stringify(editedData)));
+            }
+          }} disabled={!editedData || !sortContainer || !sortValuePath}>
+            Sort
+          </button>
         </div>
         <button onClick={validate}>Validate</button>
         <button onClick={saveCopy} disabled={!sourceFileName}>Save as _copy.json</button>
