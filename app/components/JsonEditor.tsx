@@ -315,12 +315,13 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
         onContextMenu={(e) => { 
           e.preventDefault(); 
           onSelect(path);
-          if (ancestors.length > 0) {
-            const sortContainer = ancestors[ancestors.length - 1].obj;
-            const pathParts = ancestors.slice(1).map(a => a.keyName);
-            pathParts.push(keyName);
+          if (ancestors.length >= 3) {
+            const sortContainer = ancestors[ancestors.length - 3].obj;
+            const pathParts = [ancestors[ancestors.length - 1].keyName, keyName];
             const fullPath = pathParts.join(".");
-            onContextMenuOpen(path, sortContainer, e, undefined, keyName, fullPath);
+            const containerName = ancestors[ancestors.length - 3].keyName;
+            console.log("Primitive sort:", { containerName, fullPath, ancestors: ancestors.map(a => a.keyName), sortContainer });
+            onContextMenuOpen(path, sortContainer, e, undefined, containerName, fullPath);
           }
         }}
       >

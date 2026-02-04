@@ -231,14 +231,15 @@ body {
 }
 
 .json-raw {
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  white-space: pre;
+  overflow-x: auto;
+  font-family: "Consolas", "Courier New", monospace;
   font-size: 13px;
   line-height: 1.5;
-  letter-spacing: normal;
+  letter-spacing: 0;
   margin: 0;
   padding: 0;
+  tab-size: 2;
 }
 
 .json-raw .string { color: #86efac; }
@@ -252,6 +253,11 @@ body {
   text-decoration: underline wavy rgba(253, 224, 71, 0.9);
   text-underline-offset: 2px;
   border-radius: 2px;
+}
+
+.json-raw .diff-changed {
+  background: rgba(34, 211, 238, 0.15);
+  color: #22d3ee;
 }
 
 .validation-ok {

@@ -74,6 +74,7 @@ export default function Page() {
   const [sortContainer, setSortContainer] = useState<string>("");
   const [sortValuePath, setSortValuePath] = useState<string>("");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [lastSort, setLastSort] = useState<string>("");
 
   const validate = useCallback(() => {
     if (!editedData) {
@@ -163,25 +164,53 @@ export default function Page() {
           />
           <input
             type="text"
-            placeholder="Sort by (e.g. engine.power)"
+            placeholder="By value path (e.g. engine.power) or leave empty for keys"
             value={sortValuePath}
             onChange={(e) => setSortValuePath(e.target.value)}
-            style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px", minWidth: "150px" }}
+            style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px", minWidth: "200px" }}
           />
           <select value={sortDirection} onChange={(e) => setSortDirection(e.target.value as "asc" | "desc")} style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px" }}>
             <option value="asc">A→Z</option>
             <option value="desc">Z→A</option>
           </select>
           <button onClick={() => {
-            if (!editedData || !sortContainer || !sortValuePath) return;
+            if (!editedData || !sortContainer) return;
+            const sortKey = `${sortContainer}|${sortValuePath}`;
+            let direction = sortDirection;
+            if (sortKey === lastSort) {
+              direction = sortDirection === "asc" ? "desc" : "asc";
+              setSortDirection(direction);
+            }
+            setLastSort(sortKey);
+            
+            const findTarget = (obj: any, name: string): any => {
+              if (obj && typeof obj === "object") {
+                if (obj[name]) return obj[name];
+                for (const key of Object.keys(obj)) {
+                  const found = findTarget(obj[key], name);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+            
             const parts = sortContainer.split(".");
             let target: any = editedData;
-            for (const p of parts) {
-              if (!target[p]) return;
-              target = target[p];
+            
+            if (parts.length === 1) {
+              target = findTarget(editedData, sortContainer);
+              if (!target) return;
+            } else {
+              for (const p of parts) {
+                if (!target[p]) return;
+                target = target[p];
+              }
             }
             if (typeof target === "object" && !Array.isArray(target)) {
               const keys = Object.keys(target).sort((a, b) => {
+                if (!sortValuePath) {
+                  return direction === "asc" ? a.localeCompare(b) : b.localeCompare(a);
+                }
                 const getVal = (obj: any, path: string) => {
                   const ps = path.split(".");
                   let v: any = obj;
@@ -193,9 +222,14 @@ export default function Page() {
                 };
                 const valA = getVal(target[a], sortValuePath);
                 const valB = getVal(target[b], sortValuePath);
+                
+                if (typeof valA === "number" && typeof valB === "number") {
+                  return direction === "asc" ? valA - valB : valB - valA;
+                }
+                
                 const strA = valA === null ? "" : String(valA);
                 const strB = valB === null ? "" : String(valB);
-                return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+                return direction === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
               });
               const sorted: any = {};
               keys.forEach(k => sorted[k] = target[k]);
@@ -203,7 +237,7 @@ export default function Page() {
               Object.assign(target, sorted);
               setEditedData(JSON.parse(JSON.stringify(editedData)));
             }
-          }} disabled={!editedData || !sortContainer || !sortValuePath}>
+          }} disabled={!editedData || !sortContainer}>
             Sort
           </button>
         </div>
@@ -231,13 +265,27 @@ export default function Page() {
             </div>
           </div>
           <div className="pane">
-            <div className="pane-header">Editor: click to select, right-click → Sort A-Z</div>
+            <div className="pane-header">Edited JSON (changes highlighted)</div>
             <div className="pane-content">
-              <JsonEditor
-                data={editedData}
-                onChange={(next) => setEditedData(next)}
-                sortMode={sortMode}
-                sortByPath={sortByPath}
+              <pre
+                className="json-raw"
+                dangerouslySetInnerHTML={{
+                  __html: (() => {
+                    const sourceStr = JSON.stringify(sourceData, null, 2);
+                    const editedStr = JSON.stringify(editedData, null, 2);
+                    const sourceLines = sourceStr.split('\n');
+                    const editedLines = editedStr.split('\n');
+                    const highlighted = syntaxHighlight(editedStr);
+                    const hlLines = highlighted.split('\n');
+                    const final = hlLines.map((line, i) => {
+                      if (sourceLines[i] !== editedLines[i]) {
+                        return `<span class="diff-changed">${line}</span>`;
+                      }
+                      return line;
+                    }).join('\n');
+                    return final;
+                  })(),
+                }}
               />
             </div>
           </div>
