@@ -121,6 +121,10 @@ body {
 
 .tree-node {
   margin-left: 1rem;
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: normal;
 }
 
 .tree-node-root {
@@ -134,6 +138,18 @@ body {
   padding: 2px 4px;
   border-radius: 2px;
   cursor: default;
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: normal;
+}
+
+.tree-key .key-name,
+.tree-key .key-value {
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: normal;
 }
 
 .tree-key:hover {
@@ -217,7 +233,12 @@ body {
 .json-raw {
   white-space: pre-wrap;
   word-break: break-all;
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
   font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  margin: 0;
+  padding: 0;
 }
 
 .json-raw .string { color: #86efac; }

@@ -35,12 +35,43 @@ export const vehicleInventory = {
     name: "Vehicle Inventory",
     version: "2.1",
     classes: {
-      car: {
-        productDesc: "Passenger vehicles",
-        attributes: [
-          { make: "Toyota", model: "Camry", country: "Japan", usage: "sedan", numberOfWheels: 4, topSpeed: 180 },
-          { make: "Ford", model: "F-150", country: "USA", usage: "pickup", numberOfWheels: 4, topSpeed: 170 },
-        ],
+      cars: {
+        porsche: {
+          speed: 220,
+          breaking: 10,
+          engine: {
+            size: "4l",
+            pistons: 8,
+            lubrication: "oil",
+            gaskets: 10,
+            turbo: "yes",
+            power: "petrol",
+          },
+        },
+        audi: {
+          speed: 190,
+          breaking: 5,
+          engine: {
+            size: "2l",
+            pistons: 6,
+            lubrication: "oil",
+            gaskets: 8,
+            turbo: "no",
+            power: "electric",
+          },
+        },
+        beetle: {
+          speed: 90,
+          breaking: 15,
+          engine: {
+            size: "1l",
+            pistons: 4,
+            lubrication: "oil",
+            gaskets: 4,
+            turbo: "no",
+            power: "diesel",
+          },
+        },
       },
     },
   },

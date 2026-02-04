@@ -69,6 +69,8 @@ export default function Page() {
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [validation, setValidation] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [sortMode, setSortMode] = useState<"by-key" | "by-value">("by-key");
+  const [sortByPath, setSortByPath] = useState<string>("");
 
   const validate = useCallback(() => {
     if (!editedData) {
@@ -86,19 +88,6 @@ export default function Page() {
     } catch (e) {
       setValidation({ ok: false, msg: String(e) });
     }
-  }, [editedData]);
-
-  const sortFruitNames = useCallback(() => {
-    if (!editedData) return;
-    const view = editedData.view as JsonObject | undefined;
-    const classes = view?.classes as JsonObject | undefined;
-    if (!classes) return;
-    const keys = Object.keys(classes).sort((a, b) => a.localeCompare(b));
-    const sorted: JsonObject = {};
-    keys.forEach((k) => (sorted[k] = classes[k]));
-    Object.keys(classes).forEach((k) => delete classes[k]);
-    Object.assign(classes, sorted);
-    setEditedData(JSON.parse(JSON.stringify(editedData)));
   }, [editedData]);
 
   const saveCopy = useCallback(() => {
@@ -161,7 +150,24 @@ export default function Page() {
         <button onClick={() => loadTestFile("fruit")}>Load fruit test</button>
         <button onClick={() => loadTestFile("cars")}>Load cars test</button>
         <button onClick={() => loadTestFile("deep")}>Load deep hierarchy test</button>
-        <button onClick={sortFruitNames} disabled={!editedData}>Sort fruit names A-Z</button>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "none", border: "none", padding: 0 }}>
+            <span>Sort by:</span>
+            <select value={sortMode} onChange={(e) => setSortMode(e.target.value as "by-key" | "by-value")} style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px" }}>
+              <option value="by-key">Attribute name</option>
+              <option value="by-value">Attribute value</option>
+            </select>
+          </label>
+          {sortMode === "by-value" && (
+            <input
+              type="text"
+              placeholder="e.g. engine.size"
+              value={sortByPath}
+              onChange={(e) => setSortByPath(e.target.value)}
+              style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px", minWidth: "150px" }}
+            />
+          )}
+        </div>
         <button onClick={validate}>Validate</button>
         <button onClick={saveCopy} disabled={!sourceFileName}>Save as _copy.json</button>
         {validation && (
@@ -191,6 +197,8 @@ export default function Page() {
               <JsonEditor
                 data={editedData}
                 onChange={(next) => setEditedData(next)}
+                sortMode={sortMode}
+                sortByPath={sortByPath}
               />
             </div>
           </div>

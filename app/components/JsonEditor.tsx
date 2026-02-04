@@ -16,10 +16,40 @@ function isArray(v: JsonValue): v is JsonArray {
   return Array.isArray(v);
 }
 
-function sortAtLevel(value: JsonObject | JsonArray, mode: SortMode): void {
+function getValueAtPath(obj: JsonValue, path: string): JsonValue {
+  const parts = path.split(".");
+  let current: JsonValue = obj;
+  for (const part of parts) {
+    if (current === null || typeof current !== "object") return null;
+    if (isArray(current)) {
+      const idx = parseInt(part, 10);
+      if (isNaN(idx) || idx >= current.length) return null;
+      current = current[idx];
+    } else {
+      current = (current as JsonObject)[part];
+    }
+  }
+  return current;
+}
+
+function sortAtLevel(value: JsonObject | JsonArray, mode: SortMode, sortByPath?: string): void {
   if (isObject(value)) {
     const keys = Object.keys(value);
     const sorted = keys.sort((a, b) => {
+      if (sortByPath) {
+        const valA = getValueAtPath(value[a], sortByPath);
+        const valB = getValueAtPath(value[b], sortByPath);
+        const strA = valA === null ? "" : String(valA);
+        const strB = valB === null ? "" : String(valB);
+        if (mode === "a-z") return strA.localeCompare(strB);
+        if (mode === "z-a") return strB.localeCompare(strA);
+        const na = parseFloat(strA);
+        const nb = parseFloat(strB);
+        if (!isNaN(na) && !isNaN(nb)) {
+          return mode === "num-asc" ? na - nb : nb - na;
+        }
+        return mode === "num-asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+      }
       if (mode === "a-z") return a.localeCompare(b);
       if (mode === "z-a") return b.localeCompare(a);
       const na = parseFloat(a);
@@ -34,6 +64,20 @@ function sortAtLevel(value: JsonObject | JsonArray, mode: SortMode): void {
     copy.forEach(([k, v]) => (value as JsonObject)[k] = v);
   } else if (isArray(value)) {
     value.sort((a, b) => {
+      if (sortByPath) {
+        const valA = getValueAtPath(a, sortByPath);
+        const valB = getValueAtPath(b, sortByPath);
+        const strA = valA === null ? "" : String(valA);
+        const strB = valB === null ? "" : String(valB);
+        if (mode === "a-z") return strA.localeCompare(strB);
+        if (mode === "z-a") return strB.localeCompare(strA);
+        const na = parseFloat(strA);
+        const nb = parseFloat(strB);
+        if (!isNaN(na) && !isNaN(nb)) {
+          return mode === "num-asc" ? na - nb : nb - na;
+        }
+        return strA.localeCompare(strB);
+      }
       if (mode === "a-z") return JSON.stringify(a).localeCompare(JSON.stringify(b));
       if (mode === "z-a") return JSON.stringify(b).localeCompare(JSON.stringify(a));
       const na = typeof a === "number" ? a : parseFloat(String(a));
@@ -78,11 +122,12 @@ interface TreeNodeProps {
   onUpdate: () => void;
   selectedPath: string | null;
   onSelect: (path: string) => void;
-  onContextMenuOpen: (path: string, value: JsonObject | JsonArray, e: React.MouseEvent, parent?: JsonObject | JsonArray) => void;
+  onContextMenuOpen: (path: string, value: JsonObject | JsonArray, e: React.MouseEvent, parent?: JsonObject | JsonArray, keyName?: string, sortByKey?: string, grandparent?: JsonObject | JsonArray) => void;
   depth?: number;
+  ancestors?: Array<{ obj: JsonObject | JsonArray; keyName: string }>;
 }
 
-function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedPath, onSelect, onContextMenuOpen, depth = 0 }: TreeNodeProps) {
+function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedPath, onSelect, onContextMenuOpen, depth = 0, ancestors = [] }: TreeNodeProps) {
   const [dragOver, setDragOver] = useState(false);
   const [dragging, setDragging] = useState(false);
   const isArrayParent = Array.isArray(parent);
@@ -205,7 +250,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => onSelect(path)}
-          onContextMenu={(e) => { e.preventDefault(); onSelect(path); onContextMenuOpen(path, value as JsonObject | JsonArray, e, parent); }}
+          onContextMenu={(e) => { e.preventDefault(); onSelect(path); onContextMenuOpen(path, value as JsonObject | JsonArray, e, parent, keyName, undefined); }}
         >
           {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
           <span className="key-value">{isObj ? "{" : "["}</span>
@@ -234,6 +279,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             onSelect={onSelect}
             onContextMenuOpen={onContextMenuOpen}
             depth={depth + 1}
+            ancestors={[...ancestors, { obj: value as JsonObject | JsonArray, keyName }]}
           />
         ))}
         <div style={{ marginLeft: "1rem" }}>
@@ -263,7 +309,21 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
 
   return (
     <div className="tree-node">
-      <div className="tree-key">
+      <div 
+        className="tree-key"
+        onClick={() => onSelect(path)}
+        onContextMenu={(e) => { 
+          e.preventDefault(); 
+          onSelect(path);
+          if (ancestors.length > 0) {
+            const sortContainer = ancestors[ancestors.length - 1].obj;
+            const pathParts = ancestors.slice(1).map(a => a.keyName);
+            pathParts.push(keyName);
+            const fullPath = pathParts.join(".");
+            onContextMenuOpen(path, sortContainer, e, undefined, keyName, fullPath);
+          }
+        }}
+      >
         {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
         {editing ? (
           <input
@@ -293,9 +353,13 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
 export default function JsonEditor({
   data,
   onChange,
+  sortMode = "by-key",
+  sortByPath = "",
 }: {
   data: Record<string, unknown> | null;
   onChange: (d: Record<string, unknown>) => void;
+  sortMode?: "by-key" | "by-value";
+  sortByPath?: string;
 }) {
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -304,31 +368,64 @@ export default function JsonEditor({
   }, [onChange]);
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; keyName: string; sortByKey?: string } | null>(null);
   const sortTargetRef = useRef<JsonObject | JsonArray | null>(null);
+  const sortAllTargetsRef = useRef<Array<JsonObject | JsonArray>>([]);
+  const sortByKeyRef = useRef<string>("");
 
   useEffect(() => {
     if (!contextMenu) return;
-    const close = () => { sortTargetRef.current = null; setContextMenu(null); };
+    const close = () => { sortTargetRef.current = null; sortAllTargetsRef.current = []; sortByKeyRef.current = ""; setContextMenu(null); };
     const t = setTimeout(() => window.addEventListener("click", close), 0);
     return () => { clearTimeout(t); window.removeEventListener("click", close); };
   }, [contextMenu]);
 
-  const handleContextMenuOpen = useCallback((path: string, value: JsonObject | JsonArray, e: React.MouseEvent, parent?: JsonObject | JsonArray) => {
-    setSelectedPath(path);
-    sortTargetRef.current = parent || value;
-    setContextMenu({ x: e.clientX, y: e.clientY });
+  const findAllByKey = useCallback((root: JsonValue, targetKey: string): Array<JsonObject | JsonArray> => {
+    const results: Array<JsonObject | JsonArray> = [];
+    const traverse = (val: JsonValue) => {
+      if (isObject(val)) {
+        for (const k of Object.keys(val)) {
+          if (k === targetKey && (isObject(val[k]) || isArray(val[k]))) {
+            results.push(val[k] as JsonObject | JsonArray);
+          }
+          traverse(val[k]);
+        }
+      } else if (isArray(val)) {
+        val.forEach((v) => traverse(v));
+      }
+    };
+    traverse(root);
+    return results;
   }, []);
 
-  const handleSort = useCallback((mode: SortMode) => {
-    const target = sortTargetRef.current;
-    if (target) {
-      sortAtLevel(target, mode);
-      sortTargetRef.current = null;
-      triggerUpdate();
+  const handleContextMenuOpen = useCallback((path: string, value: JsonObject | JsonArray, e: React.MouseEvent, parent?: JsonObject | JsonArray, keyName?: string, sortByKey?: string, grandparent?: JsonObject | JsonArray) => {
+    setSelectedPath(path);
+    sortTargetRef.current = value;
+    sortByKeyRef.current = sortByKey || "";
+    if (keyName && dataRef.current) {
+      sortAllTargetsRef.current = findAllByKey(dataRef.current, keyName);
+    } else {
+      sortAllTargetsRef.current = [];
     }
+    setContextMenu({ x: e.clientX, y: e.clientY, keyName: keyName || "", sortByKey });
+  }, [findAllByKey]);
+
+  const handleSort = useCallback((mode: SortMode, sortAll: boolean = false) => {
+    const path = sortByKeyRef.current || (sortMode === "by-value" ? sortByPath : undefined);
+    if (sortAll && sortAllTargetsRef.current.length > 0) {
+      sortAllTargetsRef.current.forEach((target) => sortAtLevel(target, mode, path));
+      sortAllTargetsRef.current = [];
+    } else {
+      const target = sortTargetRef.current;
+      if (target) {
+        sortAtLevel(target, mode, path);
+        sortTargetRef.current = null;
+      }
+    }
+    sortByKeyRef.current = "";
+    triggerUpdate();
     setContextMenu(null);
-  }, [triggerUpdate]);
+  }, [triggerUpdate, sortMode, sortByPath]);
 
   if (!data) return null;
 
@@ -362,7 +459,14 @@ export default function JsonEditor({
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z"); }}>Sort A-Z</button>
+          <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z", false); }}>
+            Sort {contextMenu.keyName || "element"} by {contextMenu.sortByKey || (sortMode === "by-value" && sortByPath ? sortByPath : "name")} A-Z
+          </button>
+          {sortAllTargetsRef.current.length > 1 && (
+            <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z", true); }}>
+              Sort all {contextMenu.keyName}s by {contextMenu.sortByKey || (sortMode === "by-value" && sortByPath ? sortByPath : "name")} A-Z ({sortAllTargetsRef.current.length})
+            </button>
+          )}
         </div>
       )}
     </div>
