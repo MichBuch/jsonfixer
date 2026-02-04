@@ -96,3 +96,41 @@ export const deepHierarchy = {
     },
   },
 } as const;
+
+export const obfData = {
+  view: {
+    name: "OBF Data Sample",
+    version: "1.0",
+    classification: "Foreign Exchange",
+    destinationViews: [],
+    classes: {
+      instruments: {
+        productDesc: "Financial instruments",
+        classification: "Foreign Exchange",
+        destinationViews: [],
+        attributes: [
+          {
+            name: "EURUSD",
+            classification: "Foreign Exchange",
+            destinationViews: ["Trading", "Risk", "Compliance"],
+            metadata: {
+              currency: "EUR",
+              baseCurrency: "USD",
+              assetClass: "FX"
+            }
+          },
+          {
+            name: "GBPUSD",
+            classification: "Foreign Exchange",
+            destinationViews: ["Trading", "Risk"],
+            metadata: {
+              currency: "GBP",
+              baseCurrency: "USD",
+              assetClass: "FX"
+            }
+          }
+        ]
+      }
+    }
+  }
+} as const;
