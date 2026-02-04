@@ -403,7 +403,7 @@ export default function JsonEditor({
     sortTargetRef.current = value;
     sortByKeyRef.current = sortByKey || "";
     if (keyName && dataRef.current) {
-      sortAllTargetsRef.current = findAllByKey(dataRef.current, keyName);
+      sortAllTargetsRef.current = findAllByKey(dataRef.current as JsonValue, keyName);
     } else {
       sortAllTargetsRef.current = [];
     }
