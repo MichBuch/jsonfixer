@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { isPathProtected } from "../utils/pathAnalyzer";
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 type JsonObject = { [key: string]: JsonValue };
@@ -125,9 +126,12 @@ interface TreeNodeProps {
   onContextMenuOpen: (path: string, value: JsonObject | JsonArray, e: React.MouseEvent, parent?: JsonObject | JsonArray, keyName?: string, sortByKey?: string, grandparent?: JsonObject | JsonArray) => void;
   depth?: number;
   ancestors?: Array<{ obj: JsonObject | JsonArray; keyName: string }>;
+  collapsedPaths: Set<string>;
+  toggleCollapse: (path: string) => void;
+  protectedPaths?: string[];
 }
 
-function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedPath, onSelect, onContextMenuOpen, depth = 0, ancestors = [] }: TreeNodeProps) {
+function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedPath, onSelect, onContextMenuOpen, depth = 0, ancestors = [], collapsedPaths, toggleCollapse, protectedPaths = [] }: TreeNodeProps) {
   const [dragOver, setDragOver] = useState(false);
   const [dragging, setDragging] = useState(false);
   const isArrayParent = Array.isArray(parent);
@@ -206,6 +210,12 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
   }, [parent, keyName, idx, onUpdate]);
 
   const sortAlpha = useCallback(() => {
+    // Check if this element is protected
+    if (protectedPaths.includes(keyName)) {
+      alert(`"${keyName}" is protected and cannot be sorted`);
+      return;
+    }
+
     if (isObject(value)) {
       const keys = Object.keys(value).sort();
       const sorted: JsonObject = {};
@@ -222,7 +232,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
       });
       onUpdate();
     }
-  }, [value, onUpdate]);
+  }, [value, onUpdate, keyName, protectedPaths]);
 
   const addChild = useCallback(() => {
     if (isObject(value)) {
@@ -239,6 +249,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
     const keys = isArray(value) ? value.map((_, i) => String(i)) : Object.keys(value);
     const isObj = isObject(value);
     const isSelected = selectedPath === path;
+    const isCollapsed = collapsedPaths.has(path);
     return (
       <div className={`tree-node ${depth === 0 ? "tree-node-root" : ""}`}>
         <div
@@ -252,8 +263,15 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
           onClick={() => onSelect(path)}
           onContextMenu={(e) => { e.preventDefault(); onSelect(path); onContextMenuOpen(path, value as JsonObject | JsonArray, e, parent, keyName, undefined); }}
         >
+          <span
+            onClick={(e) => { e.stopPropagation(); toggleCollapse(path); }}
+            style={{ cursor: "pointer", marginRight: "4px", userSelect: "none", display: "inline-block", width: "12px", fontSize: "10px" }}
+            title={isCollapsed ? "Expand" : "Collapse"}
+          >
+            {isCollapsed ? "▶" : "▼"}
+          </span>
           {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
-          <span className="key-value">{isObj ? "{" : "["}</span>
+          <span className="key-value">{isObj ? "{" : "["}{isCollapsed ? `...${keys.length}` : ""}</span>
           <span className="tree-actions">
             {isArrayParent && (
               <>
@@ -266,7 +284,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             <button onClick={deleteNode} title="Delete">×</button>
           </span>
         </div>
-        {keys.map((k, i) => (
+        {!isCollapsed && keys.map((k, i) => (
           <TreeNode
             key={isArray(value) ? `${k}-${i}` : k}
             path={isArray(value) ? `${path}.${k}` : path ? `${path}.${k}` : k}
@@ -280,11 +298,15 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             onContextMenuOpen={onContextMenuOpen}
             depth={depth + 1}
             ancestors={[...ancestors, { obj: value as JsonObject | JsonArray, keyName }]}
+            collapsedPaths={collapsedPaths}
+            toggleCollapse={toggleCollapse}
+            protectedPaths={protectedPaths}
           />
         ))}
-        <div style={{ marginLeft: "1rem" }}>
+        {!isCollapsed && <div style={{ marginLeft: "1rem" }}>
           <span className="key-value">{isObj ? "}" : "]"}</span>
-        </div>
+        </div>}
+        {isCollapsed && <span className="key-value" style={{ marginLeft: "4px" }}>{isObj ? "}" : "]"}</span>}
       </div>
     );
   }
@@ -309,11 +331,11 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
 
   return (
     <div className="tree-node">
-      <div 
+      <div
         className="tree-key"
         onClick={() => onSelect(path)}
-        onContextMenu={(e) => { 
-          e.preventDefault(); 
+        onContextMenu={(e) => {
+          e.preventDefault();
           onSelect(path);
           if (ancestors.length >= 3) {
             const sortContainer = ancestors[ancestors.length - 3].obj;
@@ -356,11 +378,13 @@ export default function JsonEditor({
   onChange,
   sortMode = "by-key",
   sortByPath = "",
+  protectedPaths = [],
 }: {
   data: Record<string, unknown> | null;
   onChange: (d: Record<string, unknown>) => void;
   sortMode?: "by-key" | "by-value";
   sortByPath?: string;
+  protectedPaths?: string[];
 }) {
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -370,6 +394,7 @@ export default function JsonEditor({
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; keyName: string; sortByKey?: string } | null>(null);
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const sortTargetRef = useRef<JsonObject | JsonArray | null>(null);
   const sortAllTargetsRef = useRef<Array<JsonObject | JsonArray>>([]);
   const sortByKeyRef = useRef<string>("");
@@ -411,7 +436,14 @@ export default function JsonEditor({
     setContextMenu({ x: e.clientX, y: e.clientY, keyName: keyName || "", sortByKey });
   }, [findAllByKey]);
 
-  const handleSort = useCallback((mode: SortMode, sortAll: boolean = false) => {
+  const handleSort = useCallback((mode: SortMode, sortAll: boolean = false, keyName?: string) => {
+    // Check if this element is protected
+    if (keyName && protectedPaths.includes(keyName)) {
+      alert(`"${keyName}" is protected and cannot be sorted`);
+      setContextMenu(null);
+      return;
+    }
+
     const path = sortByKeyRef.current || (sortMode === "by-value" ? sortByPath : undefined);
     if (sortAll && sortAllTargetsRef.current.length > 0) {
       sortAllTargetsRef.current.forEach((target) => sortAtLevel(target, mode, path));
@@ -426,14 +458,55 @@ export default function JsonEditor({
     sortByKeyRef.current = "";
     triggerUpdate();
     setContextMenu(null);
-  }, [triggerUpdate, sortMode, sortByPath]);
+  }, [triggerUpdate, sortMode, sortByPath, protectedPaths]);
+
+  const toggleCollapse = useCallback((path: string) => {
+    setCollapsedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
 
   if (!data) return null;
 
   const dataObj = data as JsonObject;
   const keys = Object.keys(dataObj);
+
+  const collapseAll = useCallback(() => {
+    const allPaths = new Set<string>();
+    const collectPaths = (obj: JsonValue, path: string = "") => {
+      if (isObject(obj) || isArray(obj)) {
+        if (path) allPaths.add(path);
+        const items = isObject(obj) ? Object.entries(obj) : (obj as JsonArray).map((v, i) => [String(i), v] as const);
+        items.forEach(([k, v]) => {
+          const newPath = path ? `${path}.${k}` : k;
+          collectPaths(v, newPath);
+        });
+      }
+    };
+    collectPaths(dataObj);
+    setCollapsedPaths(allPaths);
+  }, [dataObj]);
+
+  const expandAll = useCallback(() => {
+    setCollapsedPaths(new Set());
+  }, []);
+
   return (
     <div>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", padding: "0.5rem", background: "rgba(0,0,0,0.2)", borderRadius: "4px" }}>
+        <button onClick={collapseAll} style={{ padding: "0.3rem 0.6rem", fontSize: "12px", cursor: "pointer" }}>
+          ▶ Collapse All
+        </button>
+        <button onClick={expandAll} style={{ padding: "0.3rem 0.6rem", fontSize: "12px", cursor: "pointer" }}>
+          ▼ Expand All
+        </button>
+      </div>
       <div className="tree-node tree-node-root">
         <div className="key-value">{"{"}</div>
         {keys.map((k) => (
@@ -449,6 +522,9 @@ export default function JsonEditor({
             onSelect={setSelectedPath}
             onContextMenuOpen={handleContextMenuOpen}
             depth={0}
+            collapsedPaths={collapsedPaths}
+            toggleCollapse={toggleCollapse}
+            protectedPaths={protectedPaths}
           />
         ))}
         <div className="key-value">{"}"}</div>
@@ -460,11 +536,11 @@ export default function JsonEditor({
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z", false); }}>
+          <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z", false, contextMenu.keyName); }}>
             Sort {contextMenu.keyName || "element"} by {contextMenu.sortByKey || (sortMode === "by-value" && sortByPath ? sortByPath : "name")} A-Z
           </button>
           {sortAllTargetsRef.current.length > 1 && (
-            <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z", true); }}>
+            <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleSort("a-z", true, contextMenu.keyName); }}>
               Sort all {contextMenu.keyName}s by {contextMenu.sortByKey || (sortMode === "by-value" && sortByPath ? sortByPath : "name")} A-Z ({sortAllTargetsRef.current.length})
             </button>
           )}

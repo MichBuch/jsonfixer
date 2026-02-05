@@ -6,7 +6,7 @@
   --bg: #1a1a2e;
   --surface: #16213e;
   --border: #0f3460;
-  --accent: #e94560;
+  --accent: #00ffff;  /* Neon blue instead of red */
   --text: #eaeaea;
   --muted: #a0a0a0;
 }
@@ -75,14 +75,57 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
+}
+
+.pane-resizer {
+  width: 12px;
+  background: var(--border);
+  cursor: col-resize;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s, width 0.2s;
+  z-index: 10;
+  border-left: 1px solid rgba(233, 69, 96, 0.3);
+  border-right: 1px solid rgba(233, 69, 96, 0.3);
+}
+
+.pane-resizer:hover {
+  background: rgba(233, 69, 96, 0.5);
+  width: 12px;
+}
+
+.pane-resizer.resizing {
+  background: var(--accent);
+  width: 12px;
+}
+
+.pane-resizer.resizing ~ * {
+  user-select: none;
+  pointer-events: none;
+}
+
+body.resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.pane-resizer::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  right: -5px;
+  top: 0;
+  bottom: 0;
+  cursor: col-resize;
 }
 
 .pane {
-  flex: 1;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
   min-width: 0;
+  overflow: hidden;
 }
 
 .pane:last-child {
