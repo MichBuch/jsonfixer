@@ -98,12 +98,20 @@ export default function Home() {
   // Analyze JSON structure whenever data changes
   useEffect(() => {
     if (editedData && workerRef.current) {
-      const jsonString = JSON.stringify(editedData);
+      // Skip auto-analysis for large files to prevent hang
+      // Check for array length or object key count instead of stringifying
+      let isLarge = false;
+      if (Array.isArray(editedData)) {
+        if (editedData.length > 2000) isLarge = true;
+      } else if (editedData && typeof editedData === 'object') {
+        // Quick check for object keys - might still be expensive for massive objects but better than stringify
+        // For very large objects, Object.keys might still be slow, but usually fine up to 10k.
+        // We can optimize further if needed, but start here.
+        if (Object.keys(editedData).length > 2000) isLarge = true;
+      }
 
-      // Skip auto-analysis for files larger than 5MB to prevent hang
-      // Approximate check: 1 char ~= 1 byte. 5MB = 5_000_000 chars.
-      if (jsonString.length > 5 * 1024 * 1024) {
-        console.log("Large file detected. Skipping auto-analysis.");
+      if (isLarge) {
+        console.log("Large file detected (>2000 items). Skipping auto-analysis.");
         setAnalysisSkipped(true);
         setStructureAnalysis(null); // Clear previous analysis
         return;
@@ -218,7 +226,11 @@ export default function Home() {
           }
           return `<span class="${cls}">${match}</span>`;
         }
-      );
+      )
+      // Split by newlines and wrap each line.
+      // Use a special span with class 'line' which our CSS uses to generate line numbers.
+      // We must check if line is empty to ensure it still renders a height.
+      .split('\n').map(line => `<span class="line">${line || ' '}</span>`).join('');
   };
 
   return (
@@ -252,13 +264,13 @@ export default function Home() {
             // Defer generation to allow UI to update
             setTimeout(() => {
               try {
-                const largeData = generateLargeTestData(editedData, 10000);
+                const largeData = generateLargeTestData(editedData, 1000);
                 if (largeData) {
                   setSourceData(largeData);
                   setEditedData(JSON.parse(JSON.stringify(largeData)));
                   // Add checkmark to console
-                  console.log(`✓ Generated 10,000 rows at ${new Date().toLocaleTimeString()}`);
-                  alert('Generated 10,000 rows of test data!');
+                  console.log(`✓ Generated 1,000 rows at ${new Date().toLocaleTimeString()}`);
+                  alert('Generated 1,000 rows of test data!');
                 }
               } catch (e) {
                 console.error(e);
@@ -270,9 +282,9 @@ export default function Home() {
           }}
           disabled={isGenerating}
           style={{ background: '#ff6600', borderColor: '#ff6600', opacity: isGenerating ? 0.7 : 1 }}
-          title="Generate 10,000 randomized rows from current data structure"
+          title="Generate 1,000 randomized rows from current data structure"
         >
-          {isGenerating ? "Generating..." : "🔥 Generate 10k rows"}
+          {isGenerating ? "Generating..." : "🔥 Generate 1k rows"}
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto", flexWrap: "wrap" }}>
           <input
@@ -450,12 +462,14 @@ export default function Home() {
           <div className="pane" style={{ width: `${leftPaneWidth}%` }}>
             <div className="pane-header">Source (read-only)</div>
             <div className="pane-content">
+              return (
               <pre
                 className="json-raw"
                 dangerouslySetInnerHTML={{
                   __html: syntaxHighlight(JSON.stringify(sourceData, null, 2)),
                 }}
               />
+              );
             </div>
           </div>
           <div
@@ -504,6 +518,106 @@ export default function Home() {
           {isGenerating ? "Data Generation in Progress..." : "⏳ Sorting large dataset..."}
         </div>
       )}
+      <style jsx global>{`
+        .app {
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
+          background: #000;
+          color: #fff;
+          font-family: monospace;
+          overflow: hidden;
+        }
+        .app * {
+          box-sizing: border-box;
+        }
+        .toolbar {
+          padding: 0.5rem 1rem;
+          background: #0f172a;
+          border-bottom: 1px solid #333;
+          display: flex;
+          gap: 1rem;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .panes {
+          display: flex;
+          flex: 1;
+          overflow: hidden;
+        }
+        .pane {
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .pane-header {
+          padding: 0.5rem 1rem;
+          background: #1e293b;
+          border-bottom: 1px solid #333;
+          font-weight: bold;
+          font-size: 0.9rem;
+          height: 36px; /* Fixed height for alignment */
+          display: flex;
+          align-items: center;
+        }
+        .pane-content {
+          flex: 1;
+          overflow: auto;
+          padding: 0; /* Removing padding to allow line numbers to sit flush */
+          position: relative;
+        }
+        .pane-resizer {
+          width: 4px;
+          background: #333;
+          cursor: col-resize;
+          transition: background 0.2s;
+        }
+        .pane-resizer:hover, .pane-resizer.resizing {
+          background: #00ffff;
+        }
+        
+        /* Line Numbers for Source View */
+        .json-raw {
+          margin: 0;
+          font-family: 'Consolas', 'Monaco', monospace;
+          font-size: 13px;
+          line-height: 20px;
+          counter-reset: line;
+        }
+        .json-raw span.line {
+          display: block;
+          position: relative;
+          padding-left: 45px;
+        }
+        .json-raw span.line::before {
+          counter-increment: line;
+          content: counter(line);
+          position: absolute;
+          left: 0;
+          width: 35px;
+          text-align: right;
+          color: #555;
+          border-right: 1px solid #333;
+          padding-right: 5px;
+          user-select: none;
+        }
+
+        /* Syntax Highlight Colors */
+        .key { color: #9cdcfe; }
+        .string { color: #ce9178; }
+        .number { color: #b5cea8; }
+        .boolean { color: #569cd6; }
+        .null { color: #569cd6; }
+
+        .validation-ok { color: #4ade80; font-size: 0.9rem; }
+        .validation-err { color: #ef4444; font-size: 0.9rem; }
+        .validation-ok { color: #4ade80; font-size: 0.9rem; }
+        .validation-err { color: #ef4444; font-size: 0.9rem; }
+
+        .tree-key:hover .tree-actions { opacity: 1 !important; }
+        .tree-node { font-family: 'Consolas', 'Monaco', monospace; }
+      `}</style>
     </div>
   );
 }
+

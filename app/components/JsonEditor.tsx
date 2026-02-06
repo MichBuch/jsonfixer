@@ -13,6 +13,24 @@ function isObject(v: JsonValue): v is JsonObject {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
+function getJsonLineCount(val: JsonValue): number {
+  if (val === null || typeof val !== "object") return 1;
+  const keys = Array.isArray(val) ? val : Object.keys(val);
+  if (keys.length === 0) return 1; // Empty object/array takes 1 line in standard minified-pretty (e.g. "key": {})? 
+  // Wait, standard JSON.stringify(x, null, 2) takes 3 lines for non-empty: "key": {\n ... \n}
+  // But if empty, it's usually "key": {} (1 line) or "key": [\n] (2 lines)?
+  // Let's assume standard behavior:
+  // Primitive: 1 line
+  // Non-empty Object/Array: 1 (start) + children + 1 (end)
+  let count = 2;
+  if (Array.isArray(val)) {
+    for (const item of val) count += getJsonLineCount(item);
+  } else {
+    for (const k of Object.keys(val)) count += getJsonLineCount(val[k]);
+  }
+  return count;
+}
+
 function isArray(v: JsonValue): v is JsonArray {
   return Array.isArray(v);
 }
@@ -129,9 +147,11 @@ interface TreeNodeProps {
   collapsedPaths: Set<string>;
   toggleCollapse: (path: string) => void;
   protectedPaths?: string[];
+  lineNumber: number;
+  isLast?: boolean;
 }
 
-function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedPath, onSelect, onContextMenuOpen, depth = 0, ancestors = [], collapsedPaths, toggleCollapse, protectedPaths = [] }: TreeNodeProps) {
+function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedPath, onSelect, onContextMenuOpen, depth = 0, ancestors = [], collapsedPaths, toggleCollapse, protectedPaths = [], lineNumber, isLast = false }: TreeNodeProps) {
   const [dragOver, setDragOver] = useState(false);
   const [dragging, setDragging] = useState(false);
   const isArrayParent = Array.isArray(parent);
@@ -246,7 +266,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
   }, [value, onUpdate]);
 
   // Add pagination state
-  const [visibleItems, setVisibleItems] = useState(100);
+  const [visibleItems, setVisibleItems] = useState(Number.MAX_SAFE_INTEGER);
 
   if (isObject(value) || isArray(value)) {
     const allKeys = isArray(value) ? value.map((_, i) => String(i)) : Object.keys(value);
@@ -270,8 +290,10 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => onSelect(path)}
+          style={{ paddingLeft: `calc(45px + ${depth} * 2ch)`, position: "relative", height: "20px", display: "flex", alignItems: "center" }}
           onContextMenu={(e) => { e.preventDefault(); onSelect(path); onContextMenuOpen(path, value as JsonObject | JsonArray, e, parent, keyName, undefined); }}
         >
+          <span className="line-number" style={{ position: "absolute", left: 0, top: 0, width: "35px", fontSize: "13px", fontFamily: "monospace", color: "#555", textAlign: "right", paddingRight: "5px", borderRight: "1px solid #333", userSelect: "none", height: "100%" }}>{lineNumber}</span>
           <span
             onClick={(e) => { e.stopPropagation(); toggleCollapse(path); }}
             style={{ cursor: "pointer", marginRight: "4px", userSelect: "none", display: "inline-block", width: "12px", fontSize: "10px" }}
@@ -279,41 +301,52 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
           >
             {isCollapsed ? "▶" : "▼"}
           </span>
+          <span className="line-number" style={{ position: "absolute", left: 0, top: 0, width: "35px", fontSize: "13px", fontFamily: "monospace", color: "#555", textAlign: "right", paddingRight: "5px", borderRight: "1px solid #333", userSelect: "none", height: "100%" }}>{lineNumber}</span>
           {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
-          <span className="key-value">{isObj ? "{" : "["}{isCollapsed ? `...${allKeys.length}` : ""}</span>
-          <span className="tree-actions">
+          <span className="key-value">{isObj ? "{" : "["}{isCollapsed ? `...${allKeys.length}${isObj ? "}" : "]"}${!isLast ? "," : ""}` : ""}</span>
+          <span className="tree-actions" style={{ position: "absolute", right: 0, top: 0, height: "100%", display: "flex", alignItems: "center", gap: "2px", opacity: 0, transition: "opacity 0.2s", background: "#000", paddingLeft: "5px" }}>
             {isArrayParent && (
               <>
-                <button onClick={moveUp} disabled={idx <= 0} title="Move up">↑</button>
-                <button onClick={moveDown} disabled={idx >= (parent as JsonArray).length - 1} title="Move down">↓</button>
+                <button onClick={moveUp} disabled={idx <= 0} title="Move up" style={{ height: "16px", width: "16px", padding: 0, fontSize: "10px", lineHeight: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "#222", border: "1px solid #444", color: "#fff", cursor: "pointer" }}>↑</button>
+                <button onClick={moveDown} disabled={idx >= (parent as JsonArray).length - 1} title="Move down" style={{ height: "16px", width: "16px", padding: 0, fontSize: "10px", lineHeight: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "#222", border: "1px solid #444", color: "#fff", cursor: "pointer" }}>↓</button>
               </>
             )}
-            <button onClick={sortAlpha} title="Sort A-Z">⇅</button>
-            <button onClick={addChild} title="Add child">+</button>
-            <button onClick={deleteNode} title="Delete">×</button>
+            <button onClick={sortAlpha} title="Sort A-Z" style={{ height: "16px", width: "16px", padding: 0, fontSize: "10px", lineHeight: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "#222", border: "1px solid #444", color: "#fff", cursor: "pointer" }}>⇅</button>
+            <button onClick={addChild} title="Add child" style={{ height: "16px", width: "16px", padding: 0, fontSize: "10px", lineHeight: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "#222", border: "1px solid #444", color: "#fff", cursor: "pointer" }}>+</button>
+            <button onClick={deleteNode} title="Delete" style={{ height: "16px", width: "16px", padding: 0, fontSize: "10px", lineHeight: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "#222", border: "1px solid #444", color: "#fff", cursor: "pointer" }}>×</button>
           </span>
         </div>
-        {!isCollapsed && keysToShow.map((k, i) => (
-          <TreeNode
-            key={isArray(value) ? `${k}-${i}` : k}
-            path={isArray(value) ? `${path}.${k}` : path ? `${path}.${k}` : k}
-            keyName={k}
-            value={(value as Record<string, JsonValue>)[k]}
-            parent={value as JsonObject | JsonArray}
-            parentKey={isArray(value) ? parseInt(k, 10) : k}
-            onUpdate={onUpdate}
-            selectedPath={selectedPath}
-            onSelect={onSelect}
-            onContextMenuOpen={onContextMenuOpen}
-            depth={depth + 1}
-            ancestors={[...ancestors, { obj: value as JsonObject | JsonArray, keyName }]}
-            collapsedPaths={collapsedPaths}
-            toggleCollapse={toggleCollapse}
-            protectedPaths={protectedPaths}
-          />
-        ))}
+        {!isCollapsed && (() => {
+          let currentLine = lineNumber + 1;
+          return keysToShow.map((k, i) => {
+            const val = (value as Record<string, JsonValue>)[k];
+            const childLine = currentLine;
+            currentLine += getJsonLineCount(val);
+            return (
+              <TreeNode
+                key={isArray(value) ? `${k}-${i}` : k}
+                path={isArray(value) ? `${path}.${k}` : path ? `${path}.${k}` : k}
+                keyName={k}
+                value={val}
+                parent={value as JsonObject | JsonArray}
+                parentKey={isArray(value) ? parseInt(k, 10) : k}
+                onUpdate={onUpdate}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+                onContextMenuOpen={onContextMenuOpen}
+                depth={depth + 1}
+                ancestors={[...ancestors, { obj: value as JsonObject | JsonArray, keyName }]}
+                collapsedPaths={collapsedPaths}
+                toggleCollapse={toggleCollapse}
+                protectedPaths={protectedPaths}
+                lineNumber={childLine}
+                isLast={i === keysToShow.length - 1}
+              />
+            );
+          });
+        })()}
         {!isCollapsed && isLargeArray && remainingCount > 0 && (
-          <div style={{ marginLeft: "1rem", padding: "8px", fontStyle: "italic", color: "#888" }}>
+          <div style={{ paddingLeft: `calc(45px + ${depth} * 2ch + 2ch)`, height: "20px", display: "flex", alignItems: "center", fontStyle: "italic", color: "#888" }}>
             ... {remainingCount} more items ...
             <button
               onClick={(e) => { e.stopPropagation(); setVisibleItems(prev => prev + 100); }}
@@ -335,10 +368,10 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             </button>
           </div>
         )}
-        {!isCollapsed && <div style={{ marginLeft: "1rem" }}>
-          <span className="key-value">{isObj ? "}" : "]"}</span>
+        {!isCollapsed && <div style={{ paddingLeft: `calc(45px + ${depth} * 2ch)`, height: "20px", display: "flex", alignItems: "center" }}>
+          <span className="key-value">{isObj ? "}" : "]"}{!isLast ? "," : ""}</span>
         </div>}
-        {isCollapsed && <span className="key-value" style={{ marginLeft: "4px" }}>{isObj ? "}" : "]"}</span>}
+        {isCollapsed && <span className="key-value" style={{ marginLeft: "4px" }}></span>}
       </div>
     );
   }
@@ -379,6 +412,8 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
           }
         }}
       >
+
+        <span className="line-number" style={{ position: "absolute", left: 0, top: 0, width: "35px", fontSize: "13px", fontFamily: "monospace", color: "#555", textAlign: "right", paddingRight: "5px", borderRight: "1px solid #333", userSelect: "none", height: "100%" }}>{lineNumber}</span>
         {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
         {editing ? (
           <input
@@ -397,8 +432,9 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             {JSON.stringify(value)}
           </span>
         )}
-        <span className="tree-actions">
-          <button onClick={deleteNode} title="Delete">×</button>
+        <span className="comma" style={{ color: "#fff" }}>{!isLast ? "," : ""}</span>
+        <span className="tree-actions" style={{ position: "absolute", right: 0, top: 0, height: "100%", display: "flex", alignItems: "center", gap: "2px", opacity: 0, transition: "opacity 0.2s", background: "#000", paddingLeft: "5px" }}>
+          <button onClick={deleteNode} title="Delete" style={{ height: "16px", width: "16px", padding: 0, fontSize: "10px", lineHeight: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "#222", border: "1px solid #444", color: "#fff", cursor: "pointer" }}>×</button>
         </span>
       </div>
     </div>
@@ -540,26 +576,36 @@ export default function JsonEditor({
         </button>
       </div>
       <div className="tree-node tree-node-root">
-        <div className="key-value">{"{"}</div>
-        {keys.map((k) => (
-          <TreeNode
-            key={k}
-            path={k}
-            keyName={k}
-            value={dataObj[k] as JsonValue}
-            parent={dataObj}
-            parentKey={k}
-            onUpdate={triggerUpdate}
-            selectedPath={selectedPath}
-            onSelect={setSelectedPath}
-            onContextMenuOpen={handleContextMenuOpen}
-            depth={0}
-            collapsedPaths={collapsedPaths}
-            toggleCollapse={toggleCollapse}
-            protectedPaths={protectedPaths}
-          />
-        ))}
-        <div className="key-value">{"}"}</div>
+        <div className="key-value" style={{ height: "20px", paddingLeft: "45px", display: "flex", alignItems: "center" }}>{"{"}</div>
+        {(() => {
+          let currentLine = 2; // Line 1 is "{"
+          return keys.map((k, i) => {
+            const val = dataObj[k];
+            const childLine = currentLine;
+            currentLine += getJsonLineCount(val);
+            return (
+              <TreeNode
+                key={k}
+                path={k}
+                keyName={k}
+                value={val}
+                parent={dataObj}
+                parentKey={k}
+                onUpdate={triggerUpdate}
+                selectedPath={selectedPath}
+                onSelect={setSelectedPath}
+                onContextMenuOpen={handleContextMenuOpen}
+                depth={0}
+                collapsedPaths={collapsedPaths}
+                toggleCollapse={toggleCollapse}
+                protectedPaths={protectedPaths}
+                lineNumber={childLine}
+                isLast={i === keys.length - 1}
+              />
+            );
+          });
+        })()}
+        <div className="key-value" style={{ height: "20px", paddingLeft: "45px", display: "flex", alignItems: "center" }}>{"}"}</div>
       </div>
       {contextMenu && (
         <div
