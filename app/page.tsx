@@ -307,6 +307,9 @@ export default function Home() {
                 return;
               }
 
+              // Save to undo history before making changes
+              setUndoHistory([...undoHistory, JSON.parse(JSON.stringify(editedData))]);
+
               // Use path evaluator to get the container
               const updated = JSON.parse(JSON.stringify(editedData));
               const container = evaluatePath(updated as any, containerPath);
