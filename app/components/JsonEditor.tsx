@@ -245,8 +245,17 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
     }
   }, [value, onUpdate]);
 
+  // Add pagination state
+  const [visibleItems, setVisibleItems] = useState(100);
+
   if (isObject(value) || isArray(value)) {
-    const keys = isArray(value) ? value.map((_, i) => String(i)) : Object.keys(value);
+    const allKeys = isArray(value) ? value.map((_, i) => String(i)) : Object.keys(value);
+
+    // Use pagination only for arrays larger than 100 items
+    const isLargeArray = isArray(value) && allKeys.length > 100;
+    const keysToShow = isLargeArray ? allKeys.slice(0, visibleItems) : allKeys;
+    const remainingCount = allKeys.length - visibleItems;
+
     const isObj = isObject(value);
     const isSelected = selectedPath === path;
     const isCollapsed = collapsedPaths.has(path);
@@ -271,7 +280,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             {isCollapsed ? "▶" : "▼"}
           </span>
           {!isArrayParent && <span className="key-name">{JSON.stringify(keyName)}:</span>}
-          <span className="key-value">{isObj ? "{" : "["}{isCollapsed ? `...${keys.length}` : ""}</span>
+          <span className="key-value">{isObj ? "{" : "["}{isCollapsed ? `...${allKeys.length}` : ""}</span>
           <span className="tree-actions">
             {isArrayParent && (
               <>
@@ -284,7 +293,7 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             <button onClick={deleteNode} title="Delete">×</button>
           </span>
         </div>
-        {!isCollapsed && keys.map((k, i) => (
+        {!isCollapsed && keysToShow.map((k, i) => (
           <TreeNode
             key={isArray(value) ? `${k}-${i}` : k}
             path={isArray(value) ? `${path}.${k}` : path ? `${path}.${k}` : k}
@@ -303,6 +312,29 @@ function TreeNode({ path, keyName, value, parent, parentKey, onUpdate, selectedP
             protectedPaths={protectedPaths}
           />
         ))}
+        {!isCollapsed && isLargeArray && remainingCount > 0 && (
+          <div style={{ marginLeft: "1rem", padding: "8px", fontStyle: "italic", color: "#888" }}>
+            ... {remainingCount} more items ...
+            <button
+              onClick={(e) => { e.stopPropagation(); setVisibleItems(prev => prev + 100); }}
+              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "12px", background: "#333", border: "1px solid #666", color: "white", borderRadius: "4px", cursor: "pointer" }}
+            >
+              Show 100 more
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setVisibleItems(prev => prev + 1000); }}
+              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "12px", background: "#333", border: "1px solid #666", color: "white", borderRadius: "4px", cursor: "pointer" }}
+            >
+              Show 1000 more
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setVisibleItems(allKeys.length); }}
+              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "12px", background: "#333", border: "1px solid #666", color: "white", borderRadius: "4px", cursor: "pointer" }}
+            >
+              Show All (Careful!)
+            </button>
+          </div>
+        )}
         {!isCollapsed && <div style={{ marginLeft: "1rem" }}>
           <span className="key-value">{isObj ? "}" : "]"}</span>
         </div>}

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import JsonEditor from "./components/JsonEditor";
+import LoadingOverlay from "./components/LoadingOverlay";
 import { fruitCatalog, vehicleInventory } from "./test-data";
 import {
   analyzeJsonStructure,
@@ -13,6 +14,7 @@ import {
   type ContainerInfo,
   type StructureAnalysis
 } from "./utils/pathAnalyzer";
+import { generateLargeTestData } from "./utils/testDataGenerator";
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 type JsonObject = { [key: string]: JsonValue };
@@ -39,96 +41,77 @@ export default function Home() {
   const [containerOptions, setContainerOptions] = useState<ContainerInfo[]>([]);
   const [protectedContainers, setProtectedContainers] = useState<ContainerInfo[]>([]);  // All containers for protection
   const [sortFieldOptions, setSortFieldOptions] = useState<string[]>([]);
-
+  const [isSorting, setIsSorting] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [analysisSkipped, setAnalysisSkipped] = useState<boolean>(false);
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [isFileLoading, setIsFileLoading] = useState<boolean>(false);
+  const [manualSortField, setManualSortField] = useState<string>("");
+  const workerRef = useRef<Worker | null>(null);
   const protectedDropdownRef = useRef<HTMLDetailsElement>(null);
 
-  // Close dropdown when clicking outside
+  // Initialize Worker
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (protectedDropdownRef.current && !protectedDropdownRef.current.contains(e.target as Node)) {
-        protectedDropdownRef.current.open = false;
+    workerRef.current = new Worker('/worker.js');
+
+    workerRef.current.onmessage = (e) => {
+      const { type, success, result, itemCount, error } = e.data;
+
+      if (success) {
+        if (type === 'ANALYZE_RESULT') {
+          setStructureAnalysis(result.structureAnalysis);
+          setContainerOptions(result.containerOptions);
+          setProtectedContainers(result.protectedContainers);
+          setSortFieldOptions([]);
+          setIsAnalyzing(false);
+        } else if (type === 'SORT_RESULT') {
+          // Save to undo history before applying change (we access current state via callback or ref if needed, 
+          // but here we might rely on the closure or external ref if accessing editedData directly is stale. 
+          // Actually, React state updates in callbacks can be tricky with stale closures.)
+          // However, for now, specific sort logic update:
+
+          setEditedData(result);
+          setIsSorting(false);
+          console.log(`✓ Sort complete: ${itemCount} items sorted at ${new Date().toLocaleTimeString()}`);
+        }
+      } else {
+        console.error(error);
+        alert(type === 'SORT_RESULT' ? 'Sort failed: ' + error : 'Analysis failed: ' + error);
+        setIsSorting(false);
+        setIsAnalyzing(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const container = document.querySelector('.panes') as HTMLElement;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
-      setLeftPaneWidth(Math.min(Math.max(newWidth, 20), 80));
+    workerRef.current.onerror = (err) => {
+      console.error(err);
+      setIsSorting(false);
+      setIsAnalyzing(false);
     };
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-      document.body.classList.remove('resizing');
+    return () => {
+      workerRef.current?.terminate();
     };
+  }, []); // Empty dependency array = run once on mount
 
-    if (isResizing) {
-      document.body.classList.add('resizing');
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      return () => {
-        document.body.classList.remove('resizing');
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isResizing]);
 
-  const handleMouseDown = useCallback(() => {
-    setIsResizing(true);
-  }, []);
 
   // Analyze JSON structure whenever data changes
   useEffect(() => {
-    if (editedData) {
-      const analysis = analyzeJsonStructure(editedData as any);
-      setStructureAnalysis(analysis);
-      const containers = getSortableContainers(analysis);
+    if (editedData && workerRef.current) {
+      const jsonString = JSON.stringify(editedData);
 
-      // Build full sort paths: container + field combinations
-      const fullSortPaths: ContainerInfo[] = [];
-      const allContainers: ContainerInfo[] = [];
+      // Skip auto-analysis for files larger than 5MB to prevent hang
+      // Approximate check: 1 char ~= 1 byte. 5MB = 5_000_000 chars.
+      if (jsonString.length > 5 * 1024 * 1024) {
+        console.log("Large file detected. Skipping auto-analysis.");
+        setAnalysisSkipped(true);
+        setStructureAnalysis(null); // Clear previous analysis
+        return;
+      }
 
-      containers.forEach(container => {
-        // Skip array index paths
-        if (container.path.includes('[')) return;
-
-        // Add ALL containers to the protection list
-        allContainers.push(container);
-
-        if (container.type === 'array' && container.availableFields) {
-          // For arrays, create paths like "view.classes.name", "view.classes.type"
-          container.availableFields.forEach(field => {
-            fullSortPaths.push({
-              ...container,
-              path: `${container.path}.${field}`,
-              availableFields: [field] // Store the field for later extraction
-            });
-          });
-        } else if (container.type === 'object') {
-          // For objects, just the path itself (sorts by keys)
-          fullSortPaths.push(container);
-        }
-      });
-
-      setContainerOptions(fullSortPaths);
-      setProtectedContainers(allContainers);
-
-      // For the protected dropdown, show ALL discovered paths
-      const allPaths = getAllPaths(analysis).map(path => ({
-        path,
-        type: 'object' as const,
-        depth: 0,
-        itemCount: 0
-      }));
-      setProtectedContainers(allPaths);
-
-      setSortFieldOptions([]);
+      setAnalysisSkipped(false);
+      setIsAnalyzing(true);
+      workerRef.current.postMessage({ type: 'ANALYZE', data: editedData });
     } else {
       setStructureAnalysis(null);
       setContainerOptions([]);
@@ -136,6 +119,10 @@ export default function Home() {
       setSortFieldOptions([]);
     }
   }, [editedData]);
+
+  const handleMouseDown = useCallback(() => {
+    setIsResizing(true);
+  }, []);
 
   const loadTestFile = (type: "fruit" | "cars") => {
     const data = type === "fruit" ? fruitCatalog : vehicleInventory;
@@ -152,6 +139,7 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
     setSourceFileName(file.name);
+    setIsFileLoading(true);
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -170,14 +158,20 @@ export default function Home() {
           raw: event.target?.result as string,
           suggestions: []
         });
+      } finally {
+        setIsFileLoading(false);
       }
     };
 
     reader.onerror = () => {
       setLoadError("Failed to read file");
+      setIsFileLoading(false);
     };
 
-    reader.readAsText(file);
+    // Small delay to let React render loading state before blocking read
+    setTimeout(() => {
+      reader.readAsText(file);
+    }, 50);
   };
 
   const validate = () => {
@@ -229,6 +223,16 @@ export default function Home() {
 
   return (
     <div className="app">
+      <LoadingOverlay
+        isLoading={isSorting || isGenerating || isAnalyzing || isFileLoading}
+        message={
+          isSorting ? "Sorting..." :
+            isGenerating ? "Data Generation in Progress..." :
+              isAnalyzing ? "Analyzing JSON Structure..." :
+                isFileLoading ? "Reading File..." :
+                  "Loading..."
+        }
+      />
       <div className="toolbar">
         <label>
           Load JSON file
@@ -236,18 +240,93 @@ export default function Home() {
         </label>
         <button onClick={() => loadTestFile("fruit")}>Load fruit test</button>
         <button onClick={() => loadTestFile("cars")}>Load cars test</button>
+        <button
+          onClick={() => {
+            if (!editedData) {
+              alert('Please load a JSON file first to use as a template');
+              return;
+            }
+
+            setIsGenerating(true);
+
+            // Defer generation to allow UI to update
+            setTimeout(() => {
+              try {
+                const largeData = generateLargeTestData(editedData, 10000);
+                if (largeData) {
+                  setSourceData(largeData);
+                  setEditedData(JSON.parse(JSON.stringify(largeData)));
+                  // Add checkmark to console
+                  console.log(`✓ Generated 10,000 rows at ${new Date().toLocaleTimeString()}`);
+                  alert('Generated 10,000 rows of test data!');
+                }
+              } catch (e) {
+                console.error(e);
+                alert('Error generating data: ' + e);
+              } finally {
+                setIsGenerating(false);
+              }
+            }, 50);
+          }}
+          disabled={isGenerating}
+          style={{ background: '#ff6600', borderColor: '#ff6600', opacity: isGenerating ? 0.7 : 1 }}
+          title="Generate 10,000 randomized rows from current data structure"
+        >
+          {isGenerating ? "Generating..." : "🔥 Generate 10k rows"}
+        </button>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto", flexWrap: "wrap" }}>
           <input
             type="text"
             list="container-paths"
-            placeholder="Sort path (e.g. view.classes.name, view)"
+            placeholder={isAnalyzing ? "Analyzing structure..." : "Sort path (e.g. view.classes)"}
             value={sortContainer}
             onChange={(e) => setSortContainer(e.target.value)}
-            style={{ padding: "0.4rem", background: "#0a1929", color: "var(--text)", border: "1px solid #00ffff", borderRadius: "4px", minWidth: "120px" }}
+            disabled={isAnalyzing}
+            style={{
+              padding: "0.4rem",
+              background: isAnalyzing ? "#222" : "#0a1929",
+              color: "var(--text)",
+              border: "1px solid #00ffff",
+              borderRadius: "4px",
+              minWidth: "180px",
+              opacity: isAnalyzing ? 0.7 : 1
+            }}
           />
           <datalist id="container-paths">
             {containerOptions.map((c) => <option key={c.path} value={c.path} />)}
           </datalist>
+
+          <input
+            type="text"
+            placeholder="Field (optional)"
+            value={manualSortField}
+            onChange={(e) => setManualSortField(e.target.value)}
+            title="Sort field (e.g. name, type, classification[0]) - Leave empty if sorting object keys or simple array"
+            style={{
+              padding: "0.4rem",
+              background: "#0a1929",
+              color: "var(--text)",
+              border: "1px solid #00ffff",
+              borderRadius: "4px",
+              width: "120px"
+            }}
+          />
+
+          {analysisSkipped && (
+            <button
+              onClick={() => {
+                if (editedData && workerRef.current) {
+                  setAnalysisSkipped(false);
+                  setIsAnalyzing(true);
+                  workerRef.current.postMessage({ type: 'ANALYZE', data: editedData });
+                }
+              }}
+              style={{ background: "#9c27b0", borderColor: "#9c27b0" }}
+              title="Force full structure analysis (may take a moment)"
+            >
+              Scan
+            </button>
+          )}
 
 
 
@@ -289,16 +368,26 @@ export default function Home() {
               if (!editedData || !sortContainer) return;
 
               // Parse the full path to extract container and field
-              // e.g. "view.classes.name" -> container: "view.classes", field: "name"
               let containerPath = sortContainer;
-              let sortField = "";
+              let sortField = manualSortField; // Default to manual input if provided
 
-              // Check if this is a full path (has availableFields set)
-              const selectedOpt = containerOptions.find(c => c.path === sortContainer);
-              if (selectedOpt?.availableFields?.length === 1) {
-                sortField = selectedOpt.availableFields[0];
-                const lastDotIndex = sortContainer.lastIndexOf('.');
-                if (lastDotIndex > 0) containerPath = sortContainer.substring(0, lastDotIndex);
+              // If manual input is empty, try to derive from analyzed options
+              if (!sortField) {
+                const selectedOpt = containerOptions.find(c => c.path === sortContainer);
+                if (selectedOpt?.availableFields?.length === 1) {
+                  sortField = selectedOpt.availableFields[0];
+                  // Remove field from container path if it was appended (legacy logic for single-field arrays)
+                  // But since we separated inputs, the container path should technically be the container.
+                  // However, for backwards compatibility with the dropdown logic:
+                  if (selectedOpt.path.endsWith('.' + sortField)) {
+                    // container path in options might be 'view.classes', or 'view.classes.name'
+                    // based on getSortableContainers logic:
+                    // "path: `${container.path}.${field}`" was added for arrays.
+                    // So if we selected one of those, the actual container is the parent.
+                    const lastDotIndex = sortContainer.lastIndexOf('.');
+                    if (lastDotIndex > 0) containerPath = sortContainer.substring(0, lastDotIndex);
+                  }
+                }
               }
 
               // Check if this path is protected
@@ -307,64 +396,30 @@ export default function Home() {
                 return;
               }
 
-              // Save to undo history before making changes
-              setUndoHistory([...undoHistory, JSON.parse(JSON.stringify(editedData))]);
+              // Show loading state
+              setIsSorting(true);
 
-              // Use path evaluator to get the container
-              const updated = JSON.parse(JSON.stringify(editedData));
-              const container = evaluatePath(updated as any, containerPath);
-
-              if (!container) {
-                alert(`Container path "${sortContainer}" not found`);
-                return;
-              }
-
-              // Sort the container
-              if (Array.isArray(container)) {
-                container.sort((a: any, b: any) => {
-                  let valA: any = a;
-                  let valB: any = b;
-
-                  // Get values by field if specified
-                  if (sortField) {
-                    valA = getFieldValue(a, sortField);
-                    valB = getFieldValue(b, sortField);
-                  }
-
-                  // Compare
-                  const strA = String(valA ?? '');
-                  const strB = String(valB ?? '');
-                  const numA = parseFloat(strA);
-                  const numB = parseFloat(strB);
-
-                  if (!isNaN(numA) && !isNaN(numB)) {
-                    return sortDirection === "asc" ? numA - numB : numB - numA;
-                  }
-                  return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+              if (workerRef.current) {
+                // Send data to worker
+                workerRef.current.postMessage({
+                  type: 'SORT',
+                  data: editedData,
+                  containerPath,
+                  sortField,
+                  sortDirection
                 });
-                setEditedData(updated);
-              } else if (typeof container === 'object' && container !== null) {
-                // Sort object keys
-                const keys = Object.keys(container).sort((a, b) =>
-                  sortDirection === "asc" ? a.localeCompare(b) : b.localeCompare(a)
-                );
-                const sorted: any = {};
-                keys.forEach(k => sorted[k] = container[k]);
-
-                // Replace container in the data structure
-                const parts = containerPath.split(/\.|\[/).map(p => p.replace(/\]$/, ''));
-                let parent: any = updated;
-                for (let i = 0; i < parts.length - 1; i++) {
-                  parent = parent[parts[i]];
-                }
-                parent[parts[parts.length - 1]] = sorted;
-                setEditedData(updated);
+              } else {
+                console.error("Worker not initialized");
+                setIsSorting(false);
               }
+
+
             }}
             title="Sort using inputs above"
             style={{ padding: "0.4rem 0.8rem", fontWeight: "bold" }}
+            disabled={isSorting}
           >
-            Sort
+            {isSorting ? "Sorting..." : "Sort"}
           </button>
           <button
             onClick={() => {
@@ -443,8 +498,12 @@ export default function Home() {
           Load a JSON file to begin editing
         </div>
       )}
+
+      {(isSorting || isGenerating) && (
+        <div style={{ position: "fixed", bottom: "20px", right: "20px", background: "#00ffff", color: "#000", padding: "1rem 2rem", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,255,255,0.4)", fontWeight: "bold", fontSize: "16px", zIndex: 10000 }}>
+          {isGenerating ? "Data Generation in Progress..." : "⏳ Sorting large dataset..."}
+        </div>
+      )}
     </div>
   );
 }
-
-
