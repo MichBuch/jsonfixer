@@ -6,17 +6,20 @@
   --bg: #1a1a2e;
   --surface: #16213e;
   --border: #0f3460;
-  --accent: #00ffff;  /* Neon blue instead of red */
+  --accent: #00ffff;
+  /* Neon blue instead of red */
   --text: #eaeaea;
   --muted: #a0a0a0;
 }
 
 body {
   margin: 0;
-  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+
+  font-family: 'Consolas', 'Monaco', monospace;
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
+  line-height: 20px;
 }
 
 .app {
@@ -100,7 +103,7 @@ body {
   width: 12px;
 }
 
-.pane-resizer.resizing ~ * {
+.pane-resizer.resizing~* {
   user-select: none;
   pointer-events: none;
 }
@@ -164,9 +167,10 @@ body.resizing {
 
 .tree-node {
   margin-left: 1rem;
-  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 20px;
+  /* Match Source/JsonRaw line-height */
   letter-spacing: normal;
 }
 
@@ -174,16 +178,32 @@ body.resizing {
   margin-left: 0;
 }
 
+.line-number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 35px;
+  text-align: right;
+  color: #555;
+  border-right: 1px solid #333;
+  padding-right: 5px;
+  user-select: none;
+  height: 100%;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
 .tree-key {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 2px 4px;
+  padding: 0 4px;
+  /* Reduced vertical padding to keep 20px line height */
   border-radius: 2px;
   cursor: default;
-  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 20px;
   letter-spacing: normal;
 }
 
@@ -218,7 +238,7 @@ body.resizing {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   z-index: 1000;
   min-width: 180px;
   padding: 4px 0;
@@ -285,11 +305,25 @@ body.resizing {
   tab-size: 2;
 }
 
-.json-raw .string { color: #86efac; }
-.json-raw .number { color: #fcd34d; }
-.json-raw .boolean { color: #c084fc; }
-.json-raw .null { color: var(--muted); }
-.json-raw .key { color: #7dd3fc; }
+.json-raw .string {
+  color: #86efac;
+}
+
+.json-raw .number {
+  color: #fcd34d;
+}
+
+.json-raw .boolean {
+  color: #c084fc;
+}
+
+.json-raw .null {
+  color: var(--muted);
+}
+
+.json-raw .key {
+  color: #7dd3fc;
+}
 
 .json-raw .diff-highlight {
   background: rgba(253, 224, 71, 0.35);

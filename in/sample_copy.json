@@ -1,0 +1,86 @@
+{
+  "view": {
+    "def": "456",
+    "abc": "123",
+    "jkl": false,
+    "ghi": true,
+    "classes": [
+      {
+        "name": "apple",
+        "viewname": "apple",
+        "summarything": false,
+        "descriptionstuff": true,
+        "creator": {
+          "mtory": true
+        },
+        "type": "String",
+        "system": true,
+        "classification": [
+          "Sum.Ref",
+          "Ref.DESC"
+        ],
+        "modClass": "Sys",
+        "defaultv": null
+      },
+      {
+        "name": "O0_I91289",
+        "viewname": "FOR CCY",
+        "summaryAttribute": false,
+        "summarything": false,
+        "descriptionstuff": true,
+        "creator": {
+          "mtory": true
+        },
+        "type": "O0.CCY_CD",
+        "system": false,
+        "classification": [
+          "Ref.COD"
+        ],
+        "modClass": "COD",
+        "defaultValue": null
+      },
+      {
+        "name": "orange",
+        "viewname": "orange",
+        "summarything": false,
+        "descriptionstuff": true,
+        "creator": {
+          "mtory": true
+        },
+        "type": "OR.CCY",
+        "system": false,
+        "classification": [
+          "Ref.COD"
+        ],
+        "modClass": "COD",
+        "defaultv": null
+      },
+      {
+        "name": "pear",
+        "viewname": "pear",
+        "summarything": true,
+        "descriptionstuff": false,
+        "creator": {
+          "mtory": false
+        },
+        "type": "fruit",
+        "system": false,
+        "classification": [
+          "Sum.Fruit",
+          "Ref.DESC"
+        ],
+        "modClass": "Cus",
+        "defaultv": null
+      }
+    ],
+    "statusCodeMappings": [
+      {}
+    ],
+    "attributeClassifications": [
+      {}
+    ],
+    "typeAttributeClassificationMappings": [
+      {}
+    ]
+  }
+}

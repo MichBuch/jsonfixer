@@ -95,6 +95,8 @@ export default function Home() {
 
 
 
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
+
   // Analyze JSON structure whenever data changes
   useEffect(() => {
     if (editedData && workerRef.current) {
@@ -141,6 +143,7 @@ export default function Home() {
     setLoadError(null);
     setValidation(null);
     setJsonError(null);
+    setCollapsedPaths(new Set());
   };
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -159,6 +162,7 @@ export default function Home() {
         setLoadError(null);
         setValidation(null);
         setJsonError(null);
+        setCollapsedPaths(new Set());
       } catch (err: any) {
         setLoadError(err.message || String(err));
         setJsonError({
@@ -232,6 +236,44 @@ export default function Home() {
       // We must check if line is empty to ensure it still renders a height.
       .split('\n').map(line => `<span class="line">${line || ' '}</span>`).join('');
   };
+
+  const toggleCollapse = useCallback((path: string) => {
+    setCollapsedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    if (!editedData) return;
+
+    // Type guard to check if value is object or array
+    const isObject = (v: any): v is JsonObject => v !== null && typeof v === "object" && !Array.isArray(v);
+    const isArray = (v: any): v is JsonArray => Array.isArray(v);
+
+    const allPaths = new Set<string>();
+    const collectPaths = (obj: JsonValue, path: string = "") => {
+      if (isObject(obj) || isArray(obj)) {
+        if (path) allPaths.add(path);
+        const items = isObject(obj) ? Object.entries(obj) : (obj as JsonArray).map((v, i) => [String(i), v] as const);
+        items.forEach(([k, v]) => {
+          const newPath = path ? `${path}.${k}` : k;
+          collectPaths(v, newPath);
+        });
+      }
+    };
+    collectPaths(editedData);
+    setCollapsedPaths(allPaths);
+  }, [editedData]);
+
+  const expandAll = useCallback(() => {
+    setCollapsedPaths(new Set());
+  }, []);
 
   return (
     <div className="app">
@@ -462,14 +504,12 @@ export default function Home() {
           <div className="pane" style={{ width: `${leftPaneWidth}%` }}>
             <div className="pane-header">Source (read-only)</div>
             <div className="pane-content">
-              return (
               <pre
                 className="json-raw"
                 dangerouslySetInnerHTML={{
                   __html: syntaxHighlight(JSON.stringify(sourceData, null, 2)),
                 }}
               />
-              );
             </div>
           </div>
           <div
@@ -477,7 +517,25 @@ export default function Home() {
             onMouseDown={handleMouseDown}
           />
           <div className="pane" style={{ width: `${100 - leftPaneWidth}%` }}>
-            <div className="pane-header">Editor (drag, sort, collapse)</div>
+            <div className="pane-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Editor (drag, sort, collapse)</span>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  onClick={collapseAll}
+                  className="header-btn"
+                  title="Collapse All"
+                >
+                  ▶ Collapse All
+                </button>
+                <button
+                  onClick={expandAll}
+                  className="header-btn"
+                  title="Expand All"
+                >
+                  ▼ Expand All
+                </button>
+              </div>
+            </div>
             <div className="pane-content">
               <JsonEditor
                 data={editedData as Record<string, unknown>}
@@ -485,6 +543,8 @@ export default function Home() {
                 sortMode={sortValuePath ? "by-value" : "by-key"}
                 sortByPath={sortValuePath}
                 protectedPaths={Array.from(protectedPaths)}
+                collapsedPaths={collapsedPaths}
+                toggleCollapse={toggleCollapse}
               />
             </div>
           </div>
@@ -527,6 +587,19 @@ export default function Home() {
           color: #fff;
           font-family: monospace;
           overflow: hidden;
+        }
+        .header-btn {
+          background-color: #0f3460;
+          color: white;
+          border: 1px solid #00ffff;
+          border-radius: 4px;
+          padding: 2px 8px;
+          cursor: pointer;
+          font-size: 11px;
+        }
+        .header-btn:hover {
+          background-color: #00ffff;
+          color: #000;
         }
         .app * {
           box-sizing: border-box;
