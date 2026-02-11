@@ -15,7 +15,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadURL('http://localhost:3000');
+  mainWindow.loadURL('http://localhost:3021');
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -40,7 +40,26 @@ function startNext() {
 }
 
 app.on('ready', () => {
-  startNext();
+  const port = process.env.PORT;
+  if (port) {
+    // Dev mode: just load the URL
+    console.log(`Electron starting in dev mode on port ${port}`);
+    mainWindow = new BrowserWindow({
+      width: 1400,
+      height: 900,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+    mainWindow.loadURL(`http://localhost:${port}`);
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+  } else {
+    // Production/Standard mode: spawn Next.js
+    startNext();
+  }
 });
 
 app.on('window-all-closed', () => {

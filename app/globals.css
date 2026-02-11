@@ -166,16 +166,12 @@ body.resizing {
 }
 
 .tree-node {
-  margin-left: 1rem;
+  margin-left: 0;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
   line-height: 20px;
   /* Match Source/JsonRaw line-height */
   letter-spacing: normal;
-}
-
-.tree-node-root {
-  margin-left: 0;
 }
 
 .line-number {
@@ -191,6 +187,9 @@ body.resizing {
   height: 100%;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
+  z-index: 10;
+  background-color: var(--bg);
+  /* Ensure it sits on top of any potential overlap */
 }
 
 .tree-key {

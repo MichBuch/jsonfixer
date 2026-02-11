@@ -29,6 +29,18 @@ async function findFreePort(startPort = 3000) {
             const nextDev = exec(`next dev -p ${port}`);
             nextDev.stdout.pipe(process.stdout);
             nextDev.stderr.pipe(process.stderr);
+
+            // Wait a moment for Next.js to be ready, then start Electron
+            console.log('Waiting for Next.js to initialize...');
+            setTimeout(() => {
+                console.log('Starting Electron...');
+                const { spawn } = require('child_process');
+                const electron = spawn('npx', ['electron', '.'], {
+                    env: { ...process.env, PORT: port.toString() },
+                    shell: true,
+                    stdio: 'inherit'
+                });
+            }, 5000);
             return;
         }
         port++;
@@ -37,4 +49,4 @@ async function findFreePort(startPort = 3000) {
     process.exit(1);
 }
 
-findFreePort(3000);
+findFreePort(3021);
