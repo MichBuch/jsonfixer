@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import JsonEditor from "./components/JsonEditor";
 import LoadingOverlay from "./components/LoadingOverlay";
 import { fruitCatalog, vehicleInventory } from "./test-data";
@@ -47,7 +47,15 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isFileLoading, setIsFileLoading] = useState<boolean>(false);
   const [manualSortField, setManualSortField] = useState<string>("");
+  const [leftSearch, setLeftSearch] = useState<string>("");
+  const [rightSearch, setRightSearch] = useState<string>("");
+  const [debouncedLeftSearch, setDebouncedLeftSearch] = useState<string>("");
+  const [debouncedRightSearch, setDebouncedRightSearch] = useState<string>("");
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [editorViewMode, setEditorViewMode] = useState<"tree" | "text">("tree");
   const workerRef = useRef<Worker | null>(null);
+  const leftSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rightSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const protectedDropdownRef = useRef<HTMLDetailsElement>(null);
 
   // Initialize Worker
@@ -143,7 +151,10 @@ export default function Home() {
     setLoadError(null);
     setValidation(null);
     setJsonError(null);
-    setCollapsedPaths(new Set());
+    // Auto-collapse for large test data
+    const topKeys = new Set(Object.keys(mutableData));
+    setCollapsedPaths(topKeys.size > 100 ? topKeys : new Set());
+    setEditorViewMode(topKeys.size > 100 ? 'text' : 'tree');
   };
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,7 +173,21 @@ export default function Home() {
         setLoadError(null);
         setValidation(null);
         setJsonError(null);
-        setCollapsedPaths(new Set());
+        // Auto-collapse top-level keys for large files to prevent UI freeze
+        const topKeys = Object.keys(json);
+        const totalElements = topKeys.reduce((sum, k) => {
+          const v = json[k];
+          return sum + (Array.isArray(v) ? v.length : (v && typeof v === 'object' ? Object.keys(v).length : 1));
+        }, 0);
+        if (totalElements > 500) {
+          // Collapse all top-level keys so right panel renders instantly
+          setCollapsedPaths(new Set(topKeys));
+          setEditorViewMode('text');
+          console.log(`Large file detected (${totalElements} elements) — auto-switched to Text View`);
+        } else {
+          setCollapsedPaths(new Set());
+          setEditorViewMode('tree');
+        }
       } catch (err: any) {
         setLoadError(err.message || String(err));
         setJsonError({
@@ -191,25 +216,33 @@ export default function Home() {
       setValidation({ ok: false, msg: "No data loaded" });
       return;
     }
-    try {
-      JSON.stringify(editedData);
-      setValidation({ ok: true, msg: "✓ Valid JSON" });
-    } catch (e: any) {
-      setValidation({ ok: false, msg: `✗ Invalid: ${e.message}` });
-    }
+    setIsProcessing(true);
+    setTimeout(() => {
+      try {
+        JSON.stringify(editedData);
+        setValidation({ ok: true, msg: "✓ Valid JSON" });
+      } catch (e: any) {
+        setValidation({ ok: false, msg: `✗ Invalid: ${e.message}` });
+      }
+      setIsProcessing(false);
+    }, 50);
   };
 
   const saveCopy = () => {
     if (!editedData || !sourceFileName) return;
-    const baseName = sourceFileName.replace(/\.json$/i, "");
-    const copy = `${baseName}_copy.json`;
-    const blob = new Blob([JSON.stringify(editedData, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = copy;
-    a.click();
-    URL.revokeObjectURL(url);
+    setIsProcessing(true);
+    setTimeout(() => {
+      const baseName = sourceFileName.replace(/\.json$/i, "");
+      const copy = `${baseName}_copy.json`;
+      const blob = new Blob([JSON.stringify(editedData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = copy;
+      a.click();
+      URL.revokeObjectURL(url);
+      setIsProcessing(false);
+    }, 50);
   };
 
   const syntaxHighlight = (json: string): string => {
@@ -237,6 +270,37 @@ export default function Home() {
       .split('\n').map(line => `<span class="line">${line || ' '}</span>`).join('');
   };
 
+  // Layer 1: expensive — only recompute when sourceData changes
+  const baseSourceHtml = useMemo(() => {
+    if (!sourceData) return '';
+    return syntaxHighlight(JSON.stringify(sourceData, null, 2));
+  }, [sourceData]);
+
+  // Layer 2: cheap — just apply search highlighting on the cached base HTML
+  const sourceHtml = useMemo(() => {
+    if (!debouncedLeftSearch.trim()) return baseSourceHtml;
+    const term = debouncedLeftSearch.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${term})`, 'gi');
+    return baseSourceHtml.replace(/>([^<]*)</g, (_match: string, text: string) => {
+      return '>' + text.replace(regex, '<mark style="background:#ffff00;color:#000">$1</mark>') + '<';
+    });
+  }, [baseSourceHtml, debouncedLeftSearch]);
+
+  // Memoize right panel text view HTML (same approach as left panel)
+  const baseEditedHtml = useMemo(() => {
+    if (!editedData) return '';
+    return syntaxHighlight(JSON.stringify(editedData, null, 2));
+  }, [editedData]);
+
+  const editedHtml = useMemo(() => {
+    if (!debouncedRightSearch.trim()) return baseEditedHtml;
+    const term = debouncedRightSearch.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${term})`, 'gi');
+    return baseEditedHtml.replace(/>([^<]*)</g, (_match: string, text: string) => {
+      return '>' + text.replace(regex, '<mark style="background:#ffff00;color:#000">$1</mark>') + '<';
+    });
+  }, [baseEditedHtml, debouncedRightSearch]);
+
   const toggleCollapse = useCallback((path: string) => {
     setCollapsedPaths((prev) => {
       const next = new Set(prev);
@@ -251,40 +315,48 @@ export default function Home() {
 
   const collapseAll = useCallback(() => {
     if (!editedData) return;
+    setIsProcessing(true);
+    // Use setTimeout so overlay renders before heavy work
+    setTimeout(() => {
+      const isObject = (v: any): v is JsonObject => v !== null && typeof v === "object" && !Array.isArray(v);
+      const isArray = (v: any): v is JsonArray => Array.isArray(v);
 
-    // Type guard to check if value is object or array
-    const isObject = (v: any): v is JsonObject => v !== null && typeof v === "object" && !Array.isArray(v);
-    const isArray = (v: any): v is JsonArray => Array.isArray(v);
-
-    const allPaths = new Set<string>();
-    const collectPaths = (obj: JsonValue, path: string = "") => {
-      if (isObject(obj) || isArray(obj)) {
-        if (path) allPaths.add(path);
-        const items = isObject(obj) ? Object.entries(obj) : (obj as JsonArray).map((v, i) => [String(i), v] as const);
-        items.forEach(([k, v]) => {
-          const newPath = path ? `${path}.${k}` : k;
-          collectPaths(v, newPath);
-        });
-      }
-    };
-    collectPaths(editedData);
-    setCollapsedPaths(allPaths);
+      const allPaths = new Set<string>();
+      const collectPaths = (obj: JsonValue, path: string = "") => {
+        if (isObject(obj) || isArray(obj)) {
+          if (path) allPaths.add(path);
+          const items = isObject(obj) ? Object.entries(obj) : (obj as JsonArray).map((v, i) => [String(i), v] as const);
+          items.forEach(([k, v]) => {
+            const newPath = path ? `${path}.${k}` : k;
+            collectPaths(v, newPath);
+          });
+        }
+      };
+      collectPaths(editedData);
+      setCollapsedPaths(allPaths);
+      setIsProcessing(false);
+    }, 50);
   }, [editedData]);
 
   const expandAll = useCallback(() => {
-    setCollapsedPaths(new Set());
+    setIsProcessing(true);
+    setTimeout(() => {
+      setCollapsedPaths(new Set());
+      setIsProcessing(false);
+    }, 50);
   }, []);
 
   return (
     <div className="app">
       <LoadingOverlay
-        isLoading={isSorting || isGenerating || isAnalyzing || isFileLoading}
+        isLoading={isSorting || isGenerating || isAnalyzing || isFileLoading || isProcessing}
         message={
           isSorting ? "Sorting..." :
             isGenerating ? "Data Generation in Progress..." :
               isAnalyzing ? "Analyzing JSON Structure..." :
                 isFileLoading ? "Reading File..." :
-                  "Loading..."
+                  isProcessing ? "Processing..." :
+                    "Loading..."
         }
       />
       <div className="toolbar">
@@ -478,9 +550,13 @@ export default function Home() {
           <button
             onClick={() => {
               if (undoHistory.length === 0) return;
-              const previous = undoHistory[undoHistory.length - 1];
-              setEditedData(JSON.parse(JSON.stringify(previous)));
-              setUndoHistory(undoHistory.slice(0, -1));
+              setIsProcessing(true);
+              setTimeout(() => {
+                const previous = undoHistory[undoHistory.length - 1];
+                setEditedData(JSON.parse(JSON.stringify(previous)));
+                setUndoHistory(undoHistory.slice(0, -1));
+                setIsProcessing(false);
+              }, 50);
             }}
             disabled={undoHistory.length === 0}
             title="Undo last change"
@@ -503,12 +579,28 @@ export default function Home() {
         <div className="panes">
           <div className="pane" style={{ width: `${leftPaneWidth}%` }}>
             <div className="pane-header">Source (read-only)</div>
+            <div style={{ padding: '4px 8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
+              <input
+                type="text"
+                placeholder="🔍 Search source..."
+                value={leftSearch}
+                onChange={(e) => {
+                  setLeftSearch(e.target.value);
+                  if (leftSearchTimerRef.current) clearTimeout(leftSearchTimerRef.current);
+                  const val = e.target.value;
+                  leftSearchTimerRef.current = setTimeout(() => setDebouncedLeftSearch(val), 300);
+                }}
+                style={{
+                  width: '100%', padding: '4px 8px', background: '#1e293b',
+                  border: '1px solid #444', borderRadius: '4px', color: '#fff',
+                  fontSize: '12px', fontFamily: 'monospace', outline: 'none'
+                }}
+              />
+            </div>
             <div className="pane-content">
               <pre
                 className="json-raw"
-                dangerouslySetInnerHTML={{
-                  __html: syntaxHighlight(JSON.stringify(sourceData, null, 2)),
-                }}
+                dangerouslySetInnerHTML={{ __html: sourceHtml }}
               />
             </div>
           </div>
@@ -518,34 +610,72 @@ export default function Home() {
           />
           <div className="pane" style={{ width: `${100 - leftPaneWidth}%` }}>
             <div className="pane-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Editor (drag, sort, collapse)</span>
+              <span>Sorted / Edited</span>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button
-                  onClick={collapseAll}
+                  onClick={() => setEditorViewMode(editorViewMode === 'tree' ? 'text' : 'tree')}
                   className="header-btn"
-                  title="Collapse All"
+                  style={{ background: editorViewMode === 'text' ? '#00ffff33' : undefined }}
+                  title="Toggle between Tree View and Text View"
                 >
-                  ▶ Collapse All
+                  {editorViewMode === 'tree' ? '📄 Text View' : '🌳 Tree View'}
                 </button>
-                <button
-                  onClick={expandAll}
-                  className="header-btn"
-                  title="Expand All"
-                >
-                  ▼ Expand All
-                </button>
+                {editorViewMode === 'tree' && (
+                  <>
+                    <button
+                      onClick={collapseAll}
+                      className="header-btn"
+                      title="Collapse All"
+                    >
+                      ▶ Collapse
+                    </button>
+                    <button
+                      onClick={expandAll}
+                      className="header-btn"
+                      title="Expand All"
+                    >
+                      ▼ Expand
+                    </button>
+                  </>
+                )}
               </div>
             </div>
-            <div className="pane-content">
-              <JsonEditor
-                data={editedData as Record<string, unknown>}
-                onChange={(updated) => setEditedData(updated as JsonObject)}
-                sortMode={sortValuePath ? "by-value" : "by-key"}
-                sortByPath={sortValuePath}
-                protectedPaths={Array.from(protectedPaths)}
-                collapsedPaths={collapsedPaths}
-                toggleCollapse={toggleCollapse}
+            <div style={{ padding: '4px 8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
+              <input
+                type="text"
+                placeholder="🔍 Search editor..."
+                value={rightSearch}
+                onChange={(e) => {
+                  setRightSearch(e.target.value);
+                  if (rightSearchTimerRef.current) clearTimeout(rightSearchTimerRef.current);
+                  const val = e.target.value;
+                  rightSearchTimerRef.current = setTimeout(() => setDebouncedRightSearch(val), 300);
+                }}
+                style={{
+                  width: '100%', padding: '4px 8px', background: '#1e293b',
+                  border: '1px solid #444', borderRadius: '4px', color: '#fff',
+                  fontSize: '12px', fontFamily: 'monospace', outline: 'none'
+                }}
               />
+            </div>
+            <div className="pane-content">
+              {editorViewMode === 'text' ? (
+                <pre
+                  className="json-raw"
+                  dangerouslySetInnerHTML={{ __html: editedHtml }}
+                />
+              ) : (
+                <JsonEditor
+                  data={editedData as Record<string, unknown>}
+                  onChange={(updated) => setEditedData(updated as JsonObject)}
+                  sortMode={sortValuePath ? "by-value" : "by-key"}
+                  sortByPath={sortValuePath}
+                  protectedPaths={Array.from(protectedPaths)}
+                  collapsedPaths={collapsedPaths}
+                  toggleCollapse={toggleCollapse}
+                  searchTerm={debouncedRightSearch}
+                />
+              )}
             </div>
           </div>
         </div>

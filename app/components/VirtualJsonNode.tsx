@@ -23,9 +23,10 @@ interface VirtualJsonNodeProps {
     onToggle: (path: string) => void;
     onSelect: (path: string) => void;
     isSelected: boolean;
+    searchTerm?: string;
 }
 
-const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onToggle, onSelect, isSelected }) => {
+const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onToggle, onSelect, isSelected, searchTerm }) => {
     const { path, keyName, value, depth, isExpanded, isExpandable, isLast, lineNumber, type, closing } = item;
 
     const handleToggle = (e: React.MouseEvent) => {
@@ -71,21 +72,32 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
         );
     }
 
+    // Search highlighting
+    const searchMatch = (() => {
+        if (!searchTerm || !searchTerm.trim()) return false;
+        const term = searchTerm.toLowerCase();
+        const keyStr = keyName !== undefined ? String(keyName).toLowerCase() : '';
+        const valStr = value !== undefined && value !== null && !isExpandable ? String(value).toLowerCase() : '';
+        return keyStr.includes(term) || valStr.includes(term);
+    })();
+
+    const rowStyle: React.CSSProperties = {
+        ...style,
+        display: 'flex',
+        alignItems: 'center',
+        paddingLeft: 45 + (depth * 20), // Keep original padding logic
+        fontFamily: 'monospace', // Keep original font family
+        fontSize: '13px', // Keep original font size
+        lineHeight: '20px',
+        cursor: 'pointer',
+        background: searchMatch ? 'rgba(255, 255, 0, 0.15)' : isSelected ? 'rgba(0, 255, 255, 0.15)' : 'transparent',
+        borderLeft: searchMatch ? '3px solid #ffff00' : (isSelected ? '2px solid cyan' : '2px solid transparent'),
+    };
+
     return (
         <div
             onClick={handleSelect}
-            style={{
-                ...style,
-                display: 'flex',
-                alignItems: 'center',
-                paddingLeft: 45 + (depth * 20),
-                fontFamily: 'monospace',
-                fontSize: '13px',
-                lineHeight: '20px',
-                cursor: 'pointer',
-                background: isSelected ? 'rgba(0, 255, 255, 0.15)' : 'transparent',
-                borderLeft: isSelected ? '2px solid cyan' : '2px solid transparent'
-            }}
+            style={rowStyle}
             className="virtual-row"
         >
             {/* Line Number */}

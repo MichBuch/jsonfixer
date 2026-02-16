@@ -17,6 +17,7 @@ interface JsonEditorProps {
   protectedPaths?: string[];
   collapsedPaths: Set<string>;
   toggleCollapse: (path: string) => void;
+  searchTerm?: string;
 }
 
 export default function JsonEditor({
@@ -24,6 +25,7 @@ export default function JsonEditor({
   onChange,
   collapsedPaths,
   toggleCollapse,
+  searchTerm,
 }: JsonEditorProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
@@ -158,6 +160,7 @@ export default function JsonEditor({
                 onToggle={onToggle}
                 onSelect={onSelect}
                 isSelected={selectedPath === item.path}
+                searchTerm={searchTerm}
               />
             );
           };
@@ -175,7 +178,8 @@ export default function JsonEditor({
                 items: flattenedItems,
                 onToggle: toggleCollapse,
                 onSelect: setSelectedPath,
-                selectedPath
+                selectedPath,
+                searchTerm
               }}
             />
           );
