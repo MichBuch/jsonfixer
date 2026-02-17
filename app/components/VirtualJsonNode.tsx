@@ -13,6 +13,7 @@ export interface VirtualItem {
     parent: any;
     indexInParent: number;
     lineNumber: number;
+    originalLine?: number;
     type: 'object' | 'array' | 'primitive';
     closing?: boolean; // traverse end
 }
@@ -27,7 +28,7 @@ interface VirtualJsonNodeProps {
 }
 
 const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onToggle, onSelect, isSelected, searchTerm }) => {
-    const { path, keyName, value, depth, isExpanded, isExpandable, isLast, lineNumber, type, closing } = item;
+    const { path, keyName, value, depth, isExpanded, isExpandable, isLast, lineNumber, originalLine, type, closing } = item;
 
     const handleToggle = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -38,6 +39,9 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
         onSelect(path);
     };
 
+    const gutterWidth = 70; // Reduced to reduce empty space
+    const contentCheck = 80 + (depth * 20); // Gutter + Margin + Indent
+
     // Render closing brace/bracket
     if (closing) {
         return (
@@ -46,7 +50,7 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
                     ...style,
                     display: 'flex',
                     alignItems: 'center',
-                    paddingLeft: 45 + (depth * 20),
+                    paddingLeft: contentCheck,
                     fontFamily: 'monospace',
                     fontSize: '13px',
                     lineHeight: '20px',
@@ -56,7 +60,7 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
                 <div style={{
                     position: 'absolute',
                     left: 0,
-                    width: 35,
+                    width: gutterWidth,
                     textAlign: 'right',
                     color: '#555',
                     borderRight: '1px solid #333',
@@ -85,7 +89,7 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
         ...style,
         display: 'flex',
         alignItems: 'center',
-        paddingLeft: 45 + (depth * 20), // Keep original padding logic
+        paddingLeft: contentCheck,
         fontFamily: 'monospace', // Keep original font family
         fontSize: '13px', // Keep original font size
         lineHeight: '20px',
@@ -104,7 +108,7 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
             <div style={{
                 position: 'absolute',
                 left: 0,
-                width: 35,
+                width: gutterWidth,
                 textAlign: 'right',
                 color: '#555',
                 borderRight: '1px solid #333',
@@ -114,6 +118,11 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
                 background: '#1e293b' // Match background
             }}>
                 {lineNumber}
+                {originalLine && originalLine !== lineNumber && (
+                    <span style={{ color: '#888', marginLeft: 4, fontSize: '11px' }}>
+                        ({originalLine})
+                    </span>
+                )}
             </div>
 
             {/* Expand/Collapse Toggle */}

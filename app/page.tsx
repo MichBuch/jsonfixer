@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import JsonEditor from "./components/JsonEditor";
+import VirtualSourceViewer from "./components/VirtualSourceViewer";
 import LoadingOverlay from "./components/LoadingOverlay";
 import { fruitCatalog, vehicleInventory } from "./test-data";
 import {
@@ -33,13 +34,16 @@ export default function Home() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [lastSort, setLastSort] = useState<string>("");
   const [protectedPaths, setProtectedPaths] = useState<Set<string>>(new Set([]));  // Start with no protections - user can add as needed
-  const [undoHistory, setUndoHistory] = useState<any[]>([]);  // History for undo functionality
   const [jsonError, setJsonError] = useState<{ error: string; raw: string; suggestions: string[] } | null>(null);
   const [leftPaneWidth, setLeftPaneWidth] = useState<number>(50); // percentage
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const [structureAnalysis, setStructureAnalysis] = useState<StructureAnalysis | null>(null);
   const [containerOptions, setContainerOptions] = useState<ContainerInfo[]>([]);
-  const [protectedContainers, setProtectedContainers] = useState<ContainerInfo[]>([]);  // All containers for protection
+  const [protectedContainers, setProtectedContainers] = useState<ContainerInfo[]>([]);
+  const [lineMap, setLineMap] = useState<Map<string, number>>(new Map());
+
+  // Undo history now stores both data and lineMap
+  const [undoHistory, setUndoHistory] = useState<{ data: JsonObject, lineMap: Map<string, number> }[]>([]);
   const [sortFieldOptions, setSortFieldOptions] = useState<string[]>([]);
   const [isSorting, setIsSorting] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
@@ -70,23 +74,24 @@ export default function Home() {
           setStructureAnalysis(result.structureAnalysis);
           setContainerOptions(result.containerOptions);
           setProtectedContainers(result.protectedContainers);
-          setSortFieldOptions([]);
+          if (result.lineMap) setLineMap(result.lineMap);
           setIsAnalyzing(false);
+          setIsFileLoading(false);
         } else if (type === 'SORT_RESULT') {
-          // Save to undo history before applying change (we access current state via callback or ref if needed, 
-          // but here we might rely on the closure or external ref if accessing editedData directly is stale. 
-          // Actually, React state updates in callbacks can be tricky with stale closures.)
-          // However, for now, specific sort logic update:
+          // Push current state to undo history before updating
+          setUndoHistory(prev => [...prev, { data: editedData as JsonObject, lineMap: lineMap }]);
 
           setEditedData(result);
+          if (e.data.lineMap) setLineMap(e.data.lineMap);
           setIsSorting(false);
-          console.log(`✓ Sort complete: ${itemCount} items sorted at ${new Date().toLocaleTimeString()}`);
+          console.log(`✓ Sort complete: ${itemCount} items sorted. LineMap size: ${e.data.lineMap?.size}`);
         }
       } else {
         console.error(error);
         alert(type === 'SORT_RESULT' ? 'Sort failed: ' + error : 'Analysis failed: ' + error);
         setIsSorting(false);
         setIsAnalyzing(false);
+        setIsFileLoading(false);
       }
     };
 
@@ -94,6 +99,7 @@ export default function Home() {
       console.error(err);
       setIsSorting(false);
       setIsAnalyzing(false);
+      setIsFileLoading(false);
     };
 
     return () => {
@@ -129,7 +135,12 @@ export default function Home() {
 
       setAnalysisSkipped(false);
       setIsAnalyzing(true);
-      workerRef.current.postMessage({ type: 'ANALYZE', data: editedData });
+      // Send to worker for initial analysis and Line Map generation
+      workerRef.current.postMessage({
+        type: 'ANALYZE',
+        data: editedData,
+        jsonString: JSON.stringify(editedData, null, 2) // Pass raw text for line mapping
+      });
     } else {
       setStructureAnalysis(null);
       setContainerOptions([]);
@@ -188,6 +199,15 @@ export default function Home() {
           setCollapsedPaths(new Set());
           setEditorViewMode('tree');
         }
+
+        // Send to worker for initial analysis and Line Map generation
+        if (workerRef.current) {
+          workerRef.current.postMessage({
+            type: 'ANALYZE',
+            data: json,
+            jsonString: text // Pass raw text for line mapping
+          });
+        }
       } catch (err: any) {
         setLoadError(err.message || String(err));
         setJsonError({
@@ -245,61 +265,19 @@ export default function Home() {
     }, 50);
   };
 
-  const syntaxHighlight = (json: string): string => {
-    return json
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(
-        /("(\\u[\dA-Fa-f]{4}|\\[^u]|[^"\\])*"(\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
-        (match) => {
-          let cls = "number";
-          if (/^"/.test(match)) {
-            cls = /:$/.test(match) ? "key" : "string";
-          } else if (/true|false/.test(match)) {
-            cls = "boolean";
-          } else if (/null/.test(match)) {
-            cls = "null";
-          }
-          return `<span class="${cls}">${match}</span>`;
-        }
-      )
-      // Split by newlines and wrap each line.
-      // Use a special span with class 'line' which our CSS uses to generate line numbers.
-      // We must check if line is empty to ensure it still renders a height.
-      .split('\n').map(line => `<span class="line">${line || ' '}</span>`).join('');
-  };
 
-  // Layer 1: expensive — only recompute when sourceData changes
-  const baseSourceHtml = useMemo(() => {
+
+  // VirtualSourceViewer handles highlighting efficiently on-the-fly.
+  // We no longer need pre-computed HTML strings.
+  const sourceJsonString = useMemo(() => {
     if (!sourceData) return '';
-    return syntaxHighlight(JSON.stringify(sourceData, null, 2));
+    return JSON.stringify(sourceData, null, 2);
   }, [sourceData]);
 
-  // Layer 2: cheap — just apply search highlighting on the cached base HTML
-  const sourceHtml = useMemo(() => {
-    if (!debouncedLeftSearch.trim()) return baseSourceHtml;
-    const term = debouncedLeftSearch.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${term})`, 'gi');
-    return baseSourceHtml.replace(/>([^<]*)</g, (_match: string, text: string) => {
-      return '>' + text.replace(regex, '<mark style="background:#ffff00;color:#000">$1</mark>') + '<';
-    });
-  }, [baseSourceHtml, debouncedLeftSearch]);
-
-  // Memoize right panel text view HTML (same approach as left panel)
-  const baseEditedHtml = useMemo(() => {
+  const editedJsonString = useMemo(() => {
     if (!editedData) return '';
-    return syntaxHighlight(JSON.stringify(editedData, null, 2));
+    return JSON.stringify(editedData, null, 2);
   }, [editedData]);
-
-  const editedHtml = useMemo(() => {
-    if (!debouncedRightSearch.trim()) return baseEditedHtml;
-    const term = debouncedRightSearch.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${term})`, 'gi');
-    return baseEditedHtml.replace(/>([^<]*)</g, (_match: string, text: string) => {
-      return '>' + text.replace(regex, '<mark style="background:#ffff00;color:#000">$1</mark>') + '<';
-    });
-  }, [baseEditedHtml, debouncedRightSearch]);
 
   const toggleCollapse = useCallback((path: string) => {
     setCollapsedPaths((prev) => {
@@ -444,7 +422,11 @@ export default function Home() {
                 if (editedData && workerRef.current) {
                   setAnalysisSkipped(false);
                   setIsAnalyzing(true);
-                  workerRef.current.postMessage({ type: 'ANALYZE', data: editedData });
+                  workerRef.current.postMessage({
+                    type: 'ANALYZE',
+                    data: editedData,
+                    jsonString: JSON.stringify(editedData, null, 2) // Pass raw text for line mapping
+                  });
                 }
               }}
               style={{ background: "#9c27b0", borderColor: "#9c27b0" }}
@@ -531,8 +513,9 @@ export default function Home() {
                   type: 'SORT',
                   data: editedData,
                   containerPath,
-                  sortField,
-                  sortDirection
+                  sortField: manualSortField || undefined,
+                  sortDirection,
+                  lineMap: lineMap
                 });
               } else {
                 console.error("Worker not initialized");
@@ -550,13 +533,10 @@ export default function Home() {
           <button
             onClick={() => {
               if (undoHistory.length === 0) return;
-              setIsProcessing(true);
-              setTimeout(() => {
-                const previous = undoHistory[undoHistory.length - 1];
-                setEditedData(JSON.parse(JSON.stringify(previous)));
-                setUndoHistory(undoHistory.slice(0, -1));
-                setIsProcessing(false);
-              }, 50);
+              const previous = undoHistory[undoHistory.length - 1];
+              setEditedData(previous.data);
+              setLineMap(previous.lineMap);
+              setUndoHistory(undoHistory.slice(0, -1));
             }}
             disabled={undoHistory.length === 0}
             title="Undo last change"
@@ -579,7 +559,7 @@ export default function Home() {
         <div className="panes">
           <div className="pane" style={{ width: `${leftPaneWidth}%` }}>
             <div className="pane-header">Source (read-only)</div>
-            <div style={{ padding: '4px 8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
+            <div style={{ padding: '8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
               <input
                 type="text"
                 placeholder="🔍 Search source..."
@@ -591,16 +571,17 @@ export default function Home() {
                   leftSearchTimerRef.current = setTimeout(() => setDebouncedLeftSearch(val), 300);
                 }}
                 style={{
-                  width: '100%', padding: '4px 8px', background: '#1e293b',
-                  border: '1px solid #444', borderRadius: '4px', color: '#fff',
-                  fontSize: '12px', fontFamily: 'monospace', outline: 'none'
+                  width: '100%', padding: '6px 8px', background: '#1e293b',
+                  border: '1px solid #555', borderRadius: '4px', color: '#fff',
+                  fontSize: '13px', fontFamily: 'monospace', outline: 'none',
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
                 }}
               />
             </div>
             <div className="pane-content">
-              <pre
-                className="json-raw"
-                dangerouslySetInnerHTML={{ __html: sourceHtml }}
+              <VirtualSourceViewer
+                jsonString={sourceJsonString}
+                searchTerm={debouncedLeftSearch}
               />
             </div>
           </div>
@@ -640,7 +621,7 @@ export default function Home() {
                 )}
               </div>
             </div>
-            <div style={{ padding: '4px 8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
+            <div style={{ padding: '8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
               <input
                 type="text"
                 placeholder="🔍 Search editor..."
@@ -652,17 +633,18 @@ export default function Home() {
                   rightSearchTimerRef.current = setTimeout(() => setDebouncedRightSearch(val), 300);
                 }}
                 style={{
-                  width: '100%', padding: '4px 8px', background: '#1e293b',
-                  border: '1px solid #444', borderRadius: '4px', color: '#fff',
-                  fontSize: '12px', fontFamily: 'monospace', outline: 'none'
+                  width: '100%', padding: '6px 8px', background: '#1e293b',
+                  border: '1px solid #555', borderRadius: '4px', color: '#fff',
+                  fontSize: '13px', fontFamily: 'monospace', outline: 'none',
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
                 }}
               />
             </div>
             <div className="pane-content">
               {editorViewMode === 'text' ? (
-                <pre
-                  className="json-raw"
-                  dangerouslySetInnerHTML={{ __html: editedHtml }}
+                <VirtualSourceViewer
+                  jsonString={editedJsonString}
+                  searchTerm={debouncedRightSearch}
                 />
               ) : (
                 <JsonEditor
@@ -674,6 +656,7 @@ export default function Home() {
                   collapsedPaths={collapsedPaths}
                   toggleCollapse={toggleCollapse}
                   searchTerm={debouncedRightSearch}
+                  lineMap={lineMap}
                 />
               )}
             </div>

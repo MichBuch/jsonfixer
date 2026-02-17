@@ -18,6 +18,7 @@ interface JsonEditorProps {
   collapsedPaths: Set<string>;
   toggleCollapse: (path: string) => void;
   searchTerm?: string;
+  lineMap?: Map<string, number>;
 }
 
 export default function JsonEditor({
@@ -26,6 +27,7 @@ export default function JsonEditor({
   collapsedPaths,
   toggleCollapse,
   searchTerm,
+  lineMap,
 }: JsonEditorProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
@@ -49,6 +51,7 @@ export default function JsonEditor({
       const isExpandable = isObj || isArr;
       const isExpanded = isExpandable && !collapsedPaths.has(path);
       const myLine = runningLineNumber++;
+      const originalLine = lineMap?.get(path);
 
       items.push({
         id: path || 'root',
@@ -62,6 +65,7 @@ export default function JsonEditor({
         parent,
         indexInParent: -1, // Not strictly needed for display
         lineNumber: myLine,
+        originalLine,
         type: isArr ? 'array' : isObj ? 'object' : 'primitive'
       });
 
@@ -139,7 +143,7 @@ export default function JsonEditor({
     });
 
     return items;
-  }, [data, collapsedPaths]);
+  }, [data, collapsedPaths, lineMap]);
 
   if (!data) return null;
 
@@ -179,7 +183,8 @@ export default function JsonEditor({
                 onToggle: toggleCollapse,
                 onSelect: setSelectedPath,
                 selectedPath,
-                searchTerm
+                searchTerm,
+                lineMap
               }}
             />
           );
