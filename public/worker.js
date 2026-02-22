@@ -12,497 +12,267 @@ function isArray(val) {
     return Array.isArray(val);
 }
 
-function extractArrayFields(arr) {
-    const fieldSets = [];
-
-    arr.forEach((item) => {
-        if (isObject(item)) {
-            const fields = new Set();
-            Object.keys(item).forEach((key) => fields.add(key));
-            Object.entries(item).forEach(([key, value]) => {
-                if (isObject(value)) {
-                    Object.keys(value).forEach((nestedKey) => {
-                        fields.add(`${key}.${nestedKey}`);
-                    });
-                }
-            });
-            fieldSets.push(fields);
-        }
-    });
-
-    if (fieldSets.length === 0) return [];
-
+// Extract sortable field paths from objects — includes paths through arrays/nested objects
+// From {productDesc: "...", attributes: [{fruitCode: "...", name: "..."}]}
+// Returns: ["productDesc", "attributes.fruitCode", "attributes.name", ...]
+function extractSortableFields(items) {
     const allFields = new Set();
-    fieldSets.forEach((fieldSet) => {
-        fieldSet.forEach((field) => allFields.add(field));
-    });
-
-    return Array.from(allFields).sort();
-}
-
-function analyzeJsonStructure(data) {
-    const containers = [];
-    let maxDepth = 0;
-
-    function traverse(value, path, depth) {
-        maxDepth = Math.max(maxDepth, depth);
-
-        if (isArray(value)) {
-            const availableFields = extractArrayFields(value);
-            containers.push({
-                path: path || "root",
-                type: "array",
-                depth,
-                itemCount: value.length,
-                availableFields,
-            });
-
-            value.forEach((item, idx) => {
-                traverse(item, path ? `${path}[${idx}]` : `[${idx}]`, depth + 1);
-            });
-        } else if (isObject(value)) {
-            const keys = Object.keys(value);
-            containers.push({
-                path: path || "root",
-                type: "object",
-                depth,
-                itemCount: keys.length,
-            });
-
-            keys.forEach((key) => {
-                const newPath = path ? `${path}.${key}` : key;
-                traverse(value[key], newPath, depth + 1);
-            });
-        }
-    }
-
-    traverse(data, "", 0);
-    return { containers, maxDepth };
-}
-
-function getSortableContainers(analysis) {
-    return analysis.containers.filter((c) => c.itemCount > 0);
-}
-
-function getAllPaths(analysis) {
-    const paths = new Set();
-    analysis.containers.forEach(c => {
-        if (c.path && c.path !== 'root') {
-            const cleanPath = c.path.replace(/\[.*?\]/g, '');
-            if (cleanPath && !cleanPath.includes('[')) {
-                paths.add(cleanPath);
-            }
-        }
-    });
-    return Array.from(paths).sort();
-}
-
-function evaluatePath(data, path) {
-    if (!path || path === "root") return data;
-    const parts = path.split(/\.|\[/).map((p) => p.replace(/\]$/, ""));
-    let current = data;
-    for (const part of parts) {
-        if (!part) continue;
-        if (current === null || typeof current !== "object") return null;
-        if (isArray(current)) {
-            const idx = parseInt(part, 10);
-            if (isNaN(idx) || idx >= current.length) return null;
-            current = current[idx];
-        } else {
-            current = current[part];
-        }
-    }
-    return current;
-}
-
-function getFieldValue(obj, fieldPath) {
-    if (!fieldPath || fieldPath === "(keys)") return obj;
-    const parts = fieldPath.split(".");
-    let current = obj;
-    for (const part of parts) {
-        if (!part) continue;
-        if (current === null || typeof current !== "object") return null;
-        if (isArray(current)) {
-            const idx = 0;
-            if (idx >= current.length) return null;
-            current = current[idx];
-        }
-        current = current[part];
-    }
-    if (isArray(current) && current.length > 0) return current[0];
-    return current;
-}
-
-// ==========================================
-// LINEAGE MAPPING
-// ==========================================
-
-function buildLineMap(jsonString, data) {
-    const map = new Map();
-    const lines = jsonString.split(/\r\n|\n|\r/);
-
-    // We traverse the Data and find it in the Text
-    // This ensures we map the parsed structure correctly.
-    // 'cursor' tracks our position in the string (line, col) to avoid backtracking
-
-    let currentLine = 0;
-
-    // Helper to find text starting from currentLine
-    function findLineOf(searchTerm) {
-        // Search first 500 characters of each line to avoid hanging on minified/huge lines
-        // But for "json formatted" files, lines are usually short.
-        for (let i = currentLine; i < lines.length; i++) {
-            const idx = lines[i].indexOf(searchTerm);
-            if (idx !== -1) {
-                currentLine = i; // Move cursor forward
-                return i + 1; // 1-based
-            }
-        }
-        return -1;
-    }
-
-    function traverse(obj, path) {
-        if (isArray(obj)) {
-            // For arrays, the array itself starts at `[` which we might have passed
-            // We iterate items.
-            obj.forEach((item, idx) => {
-                const itemPath = path ? `${path}[${idx}]` : `[${idx}]`;
-
-                if (isObject(item)) {
-                    // Object in array usually starts with {
-                    // We don't map the object root, but its keys. 
-                    // But we should find the `{` to advance cursor?
-                    findLineOf('{');
-                    traverse(item, itemPath);
-                } else {
-                    // Primitive in array
-                    const valStr = JSON.stringify(item);
-                    const line = findLineOf(valStr);
-                    if (line !== -1) map.set(itemPath, line);
-                }
-            });
-        } else if (isObject(obj)) {
-            // Traverse keys
-            Object.keys(obj).forEach(key => {
-                const keyPath = path ? `${path}.${key}` : key;
-                // Find key: "key":
-                const line = findLineOf(`"${key}"`);
-                if (line !== -1) {
-                    map.set(keyPath, line);
-                    // Also map the object itself if needed? 
-                    // UI usually requests path of the Key.
-                }
-                traverse(obj[key], keyPath);
-            });
-        }
-    }
-
-    // Heuristic: If we start with {, find it
-    if (jsonString.trim().startsWith('{')) findLineOf('{');
-    else if (jsonString.trim().startsWith('[')) findLineOf('[');
-
-    traverse(data, "");
-    return map;
-}
-
-// ==========================================
-// WORKER MESSAGE HANDLER
-// ==========================================
-
-self.onmessage = function (e) {
-    const { type, data, lineMap, jsonString } = e.data;
-
-    try {
-        if (type === 'ANALYZE') {
-            const analysis = analyzeJsonStructure(data);
-            const containers = getSortableContainers(analysis);
-            const allPaths = getAllPaths(analysis);
-
-            // Build Line Map if jsonString is provided (Initial Load)
-            let newLineMap = lineMap; // Use existing if passed
-            if (jsonString) {
-                newLineMap = buildLineMap(jsonString, data);
-            }
-
-            // Pre-calculate options to save main thread work
-            const containerOptions = [];
-            const protectedContainers = [];
-
-            containers.forEach(container => {
-                if (container.path.includes('[')) return;
-                protectedContainers.push(container);
-
-                if (container.type === 'array' && container.availableFields) {
-                    container.availableFields.forEach(field => {
-                        containerOptions.push({
-                            ...container,
-                            path: `${container.path}.${field}`,
-                            availableFields: [field]
-                        });
-                    });
-                } else if (container.type === 'object') {
-                    containerOptions.push(container);
-                }
-            });
-
-            // For protected paths dropdown
-            const protectedPathsList = allPaths.map(path => ({
-                path,
-                type: 'object',
-                depth: 0,
-                itemCount: 0
-            }));
-
-            self.postMessage({
-                success: true,
-                type: 'ANALYZE_RESULT',
-                result: {
-                    structureAnalysis: analysis,
-                    containerOptions,
-                    protectedContainers: protectedPathsList,
-                    lineMap: newLineMap // Send back the map
-                }
-            });
-        }
-
-        else if (type === 'SORT') {
-            const { containerPath, sortField, sortDirection } = e.data;
-            const updated = JSON.parse(JSON.stringify(data));
-            const container = evaluatePath(updated, containerPath);
-
-            if (!container) throw new Error(`Container path "${containerPath}" not found`);
-
-            let itemCount = 0;
-            let moves = new Map(); // oldIndex -> newIndex
-
-            if (Array.isArray(container)) {
-                itemCount = container.length;
-
-                // Add original index tracking
-                const tracked = container.map((item, index) => ({ item, index }));
-
-                tracked.sort((a, b) => {
-                    let valA = sortField ? getFieldValue(a.item, sortField) : a.item;
-                    let valB = sortField ? getFieldValue(b.item, sortField) : b.item;
-
-                    const strA = String(valA ?? '');
-                    const strB = String(valB ?? '');
-                    const numA = parseFloat(strA);
-                    const numB = parseFloat(strB);
-
-                    if (!isNaN(numA) && !isNaN(numB)) {
-                        return sortDirection === "asc" ? numA - numB : numB - numA;
-                    }
-                    return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
-                });
-
-                // Apply sort to container and record moves
-                for (let i = 0; i < tracked.length; i++) {
-                    container[i] = tracked[i].item;
-                    moves.set(tracked[i].index, i);
-                }
-
-            } else if (typeof container === 'object' && container !== null) {
-                // Object sort is just reordering keys, paths don't change indices
-                // So lineMap stays mostly valid, but visual order changes.
-                // However, our lineMap keys are strict paths.
-                // root.obj.a -> line 10. root.obj.b -> line 11.
-                // If we sort keys, 'a' is still 'root.obj.a'.
-                // So for Objects, NO lineMap update is needed!
-
-                const keys = Object.keys(container).sort((a, b) =>
-                    sortDirection === "asc" ? a.localeCompare(b) : b.localeCompare(a)
-                );
-                itemCount = keys.length;
-                const sorted = {};
-                keys.forEach(k => sorted[k] = container[k]);
-
-                // Update parent
-                const parts = containerPath.split(/\.|\[/).map(p => p.replace(/\]$/, ''));
-                let parent = updated;
-                for (let i = 0; i < parts.length - 1; i++) {
-                    parent = parent[parts[i]];
-                }
-                parent[parts[parts.length - 1]] = sorted;
-            }
-
-            // Rebuild Line Map with moves (Only if Array sorted)
-            let newLineMap = lineMap;
-            if (moves.size > 0 && lineMap) {
-                newLineMap = new Map();
-                // O(MapSize) - iterate once and translate paths
-                for (const [path, line] of lineMap.entries()) {
-                    if (path.startsWith(containerPath) && path.includes('[')) {
-                        // Check if this path is affected by the sort
-                        // path format: containerPath[index]...
-                        const relPath = path.substring(containerPath.length); // e.g., "[5].id"
-                        const match = relPath.match(/^\[(\d+)\](.*)/);
-
-                        if (match) {
-                            const oldIndex = parseInt(match[1], 10);
-                            const suffix = match[2];
-
-                            if (moves.has(oldIndex)) {
-                                const newIndex = moves.get(oldIndex);
-                                const newPath = `${containerPath}[${newIndex}]${suffix}`;
-                                newLineMap.set(newPath, line);
-                            } else {
-                                // Index outside of sorted range? Should not happen if sorting whole array
-                                newLineMap.set(path, line);
-                            }
-                        } else {
-                            newLineMap.set(path, line);
+    items.forEach((item) => {
+        if (!isObject(item)) return;
+        Object.entries(item).forEach(([key, val]) => {
+            if (val === null || typeof val !== "object") {
+                // Primitive — directly sortable
+                allFields.add(key);
+            } else if (isArray(val) && val.length > 0) {
+                const first = val[0];
+                if (first !== null && typeof first === "object" && !isArray(first)) {
+                    // Array of objects — expose nested primitive fields
+                    Object.entries(first).forEach(([nk, nv]) => {
+                        if (nv === null || typeof nv !== "object") {
+                            allFields.add(`${key}.${nk}`);
                         }
-                    } else {
-                        newLineMap.set(path, line);
-                    }
-                }
-            }
-
-            self.postMessage({
-                success: true,
-                type: 'SORT_RESULT',
-                result: updated,
-                lineMap: newLineMap,
-                itemCount
-            });
-        }
-
-    } catch (error) {
-        self.postMessage({
-            success: false,
-            error: error.message
-        });
-    }
-};
-
-function isObject(val) {
-    return val !== null && typeof val === "object" && !Array.isArray(val);
-}
-
-function isArray(val) {
-    return Array.isArray(val);
-}
-
-function extractArrayFields(arr) {
-    const fieldSets = [];
-
-    arr.forEach((item) => {
-        if (isObject(item)) {
-            const fields = new Set();
-            Object.keys(item).forEach((key) => fields.add(key));
-            Object.entries(item).forEach(([key, value]) => {
-                if (isObject(value)) {
-                    Object.keys(value).forEach((nestedKey) => {
-                        fields.add(`${key}.${nestedKey}`);
                     });
                 }
-            });
-            fieldSets.push(fields);
-        }
+            } else if (isObject(val)) {
+                // Nested object — one level deep
+                Object.entries(val).forEach(([nk, nv]) => {
+                    if (nv === null || typeof nv !== "object") {
+                        allFields.add(`${key}.${nk}`);
+                    }
+                });
+            }
+        });
     });
-
-    if (fieldSets.length === 0) return [];
-
-    const allFields = new Set();
-    fieldSets.forEach((fieldSet) => {
-        fieldSet.forEach((field) => allFields.add(field));
-    });
-
     return Array.from(allFields).sort();
 }
 
+// ==========================================
+// STRUCTURE ANALYSIS
+// Produces schema-level paths only:
+//   - view.classes          (dictionary object — sort keys alphabetically or by field)
+//   - view.classes.*.attributes  (array inside each dictionary value)
+// Never produces data-value paths like view.classes.pear
+// ==========================================
+
 function analyzeJsonStructure(data) {
     const containers = [];
-    let maxDepth = 0;
 
-    function traverse(value, path, depth) {
-        maxDepth = Math.max(maxDepth, depth);
-
+    function traverse(value, schemaPath, depth) {
         if (isArray(value)) {
-            const availableFields = extractArrayFields(value);
+            const fields = extractSortableFields(value);
             containers.push({
-                path: path || "root",
+                path: schemaPath || "root",
                 type: "array",
                 depth,
                 itemCount: value.length,
-                availableFields,
+                availableFields: fields.length > 0 ? fields : undefined,
             });
+            // Recurse into first item to find nested containers
+            if (value.length > 0 && (isObject(value[0]) || isArray(value[0]))) {
+                traverse(value[0], schemaPath ? `${schemaPath}[0]` : "[0]", depth + 1);
+            }
 
-            value.forEach((item, idx) => {
-                traverse(item, path ? `${path}[${idx}]` : `[${idx}]`, depth + 1);
-            });
         } else if (isObject(value)) {
             const keys = Object.keys(value);
-            containers.push({
-                path: path || "root",
-                type: "object",
-                depth,
-                itemCount: keys.length,
-            });
 
-            keys.forEach((key) => {
-                const newPath = path ? `${path}.${key}` : key;
-                traverse(value[key], newPath, depth + 1);
-            });
+            // Dictionary detection: all values are objects (dynamic named keys = data, not schema)
+            const childVals = keys.map(k => value[k]);
+            const isDictionary = keys.length > 0 && childVals.every(isObject);
+
+            if (isDictionary) {
+                // Collect fields from dictionary values for sorting
+                const fields = extractSortableFields(childVals);
+                containers.push({
+                    path: schemaPath || "root",
+                    type: "object",
+                    isDictionary: true,
+                    depth,
+                    itemCount: keys.length,
+                    availableFields: fields.length > 0 ? fields : undefined,
+                });
+                // Recurse into first value using wildcard * to find nested containers
+                // e.g. view.classes.* -> view.classes.*.attributes
+                const firstVal = value[keys[0]];
+                traverse(firstVal, schemaPath ? `${schemaPath}.*` : "*", depth + 1);
+
+            } else {
+                // Structural object — keys are schema, not data
+                containers.push({
+                    path: schemaPath || "root",
+                    type: "object",
+                    isDictionary: false,
+                    depth,
+                    itemCount: keys.length,
+                });
+                keys.forEach((key) => {
+                    const child = value[key];
+                    if (isArray(child) || isObject(child)) {
+                        traverse(child, schemaPath ? `${schemaPath}.${key}` : key, depth + 1);
+                    }
+                });
+            }
         }
     }
 
     traverse(data, "", 0);
-    return { containers, maxDepth };
+    return { containers };
 }
 
-function getSortableContainers(analysis) {
-    return analysis.containers.filter((c) => c.itemCount > 0);
-}
-
-function getAllPaths(analysis) {
-    const paths = new Set();
-    analysis.containers.forEach(c => {
-        if (c.path && c.path !== 'root') {
-            const cleanPath = c.path.replace(/\[.*?\]/g, '');
-            if (cleanPath && !cleanPath.includes('[')) {
-                paths.add(cleanPath);
-            }
-        }
-    });
-    return Array.from(paths).sort();
-}
+// ==========================================
+// PATH EVALUATION
+// Supports wildcard * for dictionary keys:
+//   view.classes.*.attributes -> sorts attributes in ALL fruit entries
+// ==========================================
 
 function evaluatePath(data, path) {
     if (!path || path === "root") return data;
-    const parts = path.split(/\.|\[/).map((p) => p.replace(/\]$/, ""));
+    const parts = parsePath(path);
     let current = data;
     for (const part of parts) {
-        if (!part) continue;
-        if (current === null || typeof current !== "object") return null;
-        if (isArray(current)) {
+        if (current === null || current === undefined || typeof current !== "object") return null;
+        if (part === "*") {
+            // wildcard: return first value of object
+            const keys = Object.keys(current);
+            if (keys.length === 0) return null;
+            current = current[keys[0]];
+        } else if (isArray(current)) {
             const idx = parseInt(part, 10);
             if (isNaN(idx) || idx >= current.length) return null;
             current = current[idx];
         } else {
+            if (!(part in current)) return null;
             current = current[part];
         }
     }
     return current;
 }
 
+// Resolve wildcard paths to ALL matching containers
+// e.g. view.classes.*.attributes -> [{path: "view.classes.apple.attributes", value: [...]}, ...]
+function resolveWildcardPath(data, schemaPath) {
+    const parts = parsePath(schemaPath);
+    const results = [];
+
+    function walk(current, remaining, resolvedPath) {
+        if (remaining.length === 0) {
+            results.push({ path: resolvedPath, value: current });
+            return;
+        }
+        if (current === null || current === undefined || typeof current !== "object") return;
+
+        const part = remaining[0];
+        const rest = remaining.slice(1);
+
+        if (part === "*") {
+            // expand all keys
+            Object.keys(current).forEach(key => {
+                walk(current[key], rest, resolvedPath ? `${resolvedPath}.${key}` : key);
+            });
+        } else if (part.startsWith("[") && part.endsWith("]")) {
+            const idx = parseInt(part.slice(1, -1), 10);
+            if (isArray(current) && idx < current.length) {
+                walk(current[idx], rest, `${resolvedPath}[${idx}]`);
+            }
+        } else {
+            if (isArray(current)) {
+                // numeric index
+                const idx = parseInt(part, 10);
+                if (!isNaN(idx) && idx < current.length) {
+                    walk(current[idx], rest, `${resolvedPath}[${idx}]`);
+                }
+            } else if (part in current) {
+                walk(current[part], rest, resolvedPath ? `${resolvedPath}.${part}` : part);
+            }
+        }
+    }
+
+    walk(data, parts, "");
+    return results;
+}
+
+function parsePath(path) {
+    // "view.classes.*.attributes" -> ["view", "classes", "*", "attributes"]
+    // "view.classes[0].name" -> ["view", "classes", "[0]", "name"]
+    const parts = [];
+    const re = /([^.[]+)|\[(\d+)\]/g;
+    let m;
+    while ((m = re.exec(path)) !== null) {
+        if (m[1] !== undefined) parts.push(m[1]);
+        else parts.push(`[${m[2]}]`);
+    }
+    return parts;
+}
+
 function getFieldValue(obj, fieldPath) {
-    if (!fieldPath || fieldPath === "(keys)") return obj;
+    if (!fieldPath) return obj;
     const parts = fieldPath.split(".");
     let current = obj;
     for (const part of parts) {
         if (!part) continue;
         if (current === null || typeof current !== "object") return null;
-        if (isArray(current)) {
-            const idx = 0;
-            if (idx >= current.length) return null;
-            current = current[idx];
-        }
+        if (isArray(current)) { current = current[0]; if (current === undefined) return null; }
         current = current[part];
     }
     if (isArray(current) && current.length > 0) return current[0];
     return current;
+}
+
+function sortContainer(container, sortField, sortDirection) {
+    if (isArray(container)) {
+        container.sort((a, b) => {
+            const valA = sortField ? getFieldValue(a, sortField) : a;
+            const valB = sortField ? getFieldValue(b, sortField) : b;
+            const strA = String(valA ?? '');
+            const strB = String(valB ?? '');
+            const numA = parseFloat(strA);
+            const numB = parseFloat(strB);
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return sortDirection === "asc" ? numA - numB : numB - numA;
+            }
+            return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+        });
+        return { sorted: container, itemCount: container.length };
+    } else if (isObject(container)) {
+        const keys = Object.keys(container).sort((a, b) => {
+            if (sortField) {
+                const valA = getFieldValue(container[a], sortField);
+                const valB = getFieldValue(container[b], sortField);
+                const strA = String(valA ?? '');
+                const strB = String(valB ?? '');
+                const numA = parseFloat(strA);
+                const numB = parseFloat(strB);
+                if (!isNaN(numA) && !isNaN(numB)) {
+                    return sortDirection === "asc" ? numA - numB : numB - numA;
+                }
+                return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+            }
+            return sortDirection === "asc" ? a.localeCompare(b) : b.localeCompare(a);
+        });
+        const sorted = {};
+        keys.forEach(k => sorted[k] = container[k]);
+        return { sorted, itemCount: keys.length };
+    }
+    return { sorted: container, itemCount: 0 };
+}
+
+function setAtPath(root, resolvedPath, value) {
+    const parts = parsePath(resolvedPath);
+    let current = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        if (part.startsWith("[")) {
+            current = current[parseInt(part.slice(1, -1), 10)];
+        } else {
+            current = current[part];
+        }
+        if (current === null || current === undefined) return;
+    }
+    const last = parts[parts.length - 1];
+    if (last.startsWith("[")) {
+        current[parseInt(last.slice(1, -1), 10)] = value;
+    } else {
+        current[last] = value;
+    }
 }
 
 // ==========================================
@@ -515,36 +285,51 @@ self.onmessage = function (e) {
     try {
         if (type === 'ANALYZE') {
             const analysis = analyzeJsonStructure(data);
-            const containers = getSortableContainers(analysis);
-            const allPaths = getAllPaths(analysis);
 
-            // Pre-calculate options to save main thread work
+            // Build full dropdown: each container + each of its sortable fields
+            // e.g. "view.classes" (by key) + "view.classes.productDesc" + "view.classes.attributes.name" etc.
             const containerOptions = [];
-            const protectedContainers = [];
 
-            containers.forEach(container => {
-                if (container.path.includes('[')) return;
-                protectedContainers.push(container);
+            analysis.containers.forEach(c => {
+                if (!c.path || c.path === 'root') return;
+                // Skip paths with array indices — internal traversal artifacts
+                if (c.path.includes('[')) return;
 
-                if (container.type === 'array' && container.availableFields) {
-                    container.availableFields.forEach(field => {
+                // Base entry: sort container by key/index
+                containerOptions.push({
+                    path: c.path,
+                    type: c.type,
+                    itemCount: c.itemCount,
+                    sortField: null,
+                });
+
+                // One entry per sortable field
+                if (c.availableFields) {
+                    c.availableFields.forEach(field => {
                         containerOptions.push({
-                            ...container,
-                            path: `${container.path}.${field}`,
-                            availableFields: [field]
+                            path: c.path,
+                            type: c.type,
+                            itemCount: c.itemCount,
+                            sortField: field,
                         });
                     });
-                } else if (container.type === 'object') {
-                    containerOptions.push(container);
                 }
             });
 
-            // For protected paths dropdown
+            console.log("[worker] ANALYZE:", containerOptions.length, "sort options");
+
+            // Deduplicate by display path (container.sortField)
+            const seen = new Set();
+            const uniqueOptions = containerOptions.filter(c => {
+                const key = c.sortField ? `${c.path}.${c.sortField}` : c.path;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+
+            const allPaths = [...new Set(uniqueOptions.map(c => c.path))].sort();
             const protectedPathsList = allPaths.map(path => ({
-                path,
-                type: 'object',
-                depth: 0,
-                itemCount: 0
+                path, type: 'object', depth: 0, itemCount: 0
             }));
 
             self.postMessage({
@@ -552,115 +337,94 @@ self.onmessage = function (e) {
                 type: 'ANALYZE_RESULT',
                 result: {
                     structureAnalysis: analysis,
-                    containerOptions,
-                    protectedContainers: protectedPathsList
-                }
+                    containerOptions: uniqueOptions,
+                    protectedContainers: protectedPathsList,
+                },
             });
         }
 
         else if (type === 'SORT') {
-            const { containerPath, sortField, sortDirection, lineMap } = e.data;
-            const updated = JSON.parse(JSON.stringify(data));
-            const container = evaluatePath(updated, containerPath);
+            let { containerPath, sortField, sortDirection } = e.data;
 
-            if (!container) throw new Error(`Container path "${containerPath}" not found`);
+            console.log(`[worker] SORT input — path:"${containerPath}" field:"${sortField ?? ''}" dir:"${sortDirection}"`);
 
-            let itemCount = 0;
-            let moves = new Map(); // oldIndex -> newIndex
-
-            if (Array.isArray(container)) {
-                itemCount = container.length;
-
-                // Track original indices to map moves
-                const tracked = container.map((item, index) => ({ item, index }));
-
-                tracked.sort((a, b) => {
-                    let valA = sortField ? getFieldValue(a.item, sortField) : a.item;
-                    let valB = sortField ? getFieldValue(b.item, sortField) : b.item;
-
-                    const strA = String(valA ?? '');
-                    const strB = String(valB ?? '');
-                    const numA = parseFloat(strA);
-                    const numB = parseFloat(strB);
-
-                    if (!isNaN(numA) && !isNaN(numB)) {
-                        return sortDirection === "asc" ? numA - numB : numB - numA;
-                    }
-                    return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
-                });
-
-                // Apply sort
-                for (let i = 0; i < tracked.length; i++) {
-                    container[i] = tracked[i].item;
-                    moves.set(tracked[i].index, i);
-                }
-
-            } else if (typeof container === 'object' && container !== null) {
-                const keys = Object.keys(container).sort((a, b) =>
-                    sortDirection === "asc" ? a.localeCompare(b) : b.localeCompare(a)
-                );
-                itemCount = keys.length;
-                const sorted = {};
-                keys.forEach(k => sorted[k] = container[k]);
-
-                const parts = containerPath.split(/\.|\[/).map(p => p.replace(/\]$/, ''));
-                let parent = updated;
-                for (let i = 0; i < parts.length - 1; i++) {
-                    parent = parent[parts[i]];
-                }
-                parent[parts[parts.length - 1]] = sorted;
-            }
-
-            // Rebuild Line Map with moves (Only if Array sorted)
-            let newLineMap = lineMap;
-            // Optimization checking: root array paths start with '[' not 'root['
-            const isRoot = containerPath === 'root';
-            const rangePrefix = isRoot ? '[' : (containerPath + '[');
-
-            if (moves.size > 0 && lineMap) {
-                newLineMap = new Map();
-                for (const [path, line] of lineMap.entries()) {
-                    // Check if path is inside the sorted container
-                    if (path.startsWith(rangePrefix)) {
-                        // Extract relative path to identify index: [5].id
-                        const relPath = isRoot ? path : path.substring(containerPath.length);
-                        const match = relPath.match(/^\[(\d+)\](.*)/);
-
-                        if (match) {
-                            const oldIndex = parseInt(match[1], 10);
-                            const suffix = match[2];
-
-                            if (moves.has(oldIndex)) {
-                                const newIndex = moves.get(oldIndex);
-                                const newPath = isRoot
-                                    ? `[${newIndex}]${suffix}`
-                                    : `${containerPath}[${newIndex}]${suffix}`;
-                                newLineMap.set(newPath, line);
-                            } else {
-                                newLineMap.set(path, line);
+            // Smart path resolution: if containerPath doesn't point to a container,
+            // walk the path to find the deepest sortable container and use the rest as sortField.
+            // This handles both dropdown selections AND manually typed paths.
+            if (!containerPath.includes('*')) {
+                const resolved = evaluatePath(data, containerPath);
+                if (resolved === null || resolved === undefined || typeof resolved !== 'object') {
+                    // containerPath doesn't point to a container — try splitting it
+                    const parts = containerPath.split('.');
+                    let bestContainerIdx = -1;
+                    let node = data;
+                    for (let i = 0; i < parts.length; i++) {
+                        if (node === null || node === undefined || typeof node !== 'object') break;
+                        node = isArray(node) ? node : node[parts[i]];
+                        if (node !== null && node !== undefined && typeof node === 'object') {
+                            // This is a valid container (array or object with multiple keys)
+                            if (isArray(node) || Object.keys(node).length > 1) {
+                                bestContainerIdx = i;
                             }
-                        } else {
-                            newLineMap.set(path, line);
                         }
-                    } else {
-                        newLineMap.set(path, line);
+                    }
+                    if (bestContainerIdx >= 0) {
+                        const newContainerPath = parts.slice(0, bestContainerIdx + 1).join('.');
+                        const newSortField = parts.slice(bestContainerIdx + 1).join('.');
+                        console.log(`[worker] SORT resolved: container="${newContainerPath}" field="${newSortField}"`);
+                        containerPath = newContainerPath;
+                        sortField = newSortField || sortField;
                     }
                 }
             }
+
+            const updated = JSON.parse(JSON.stringify(data));
+            const hasWildcard = containerPath.includes('*');
+
+            let totalItems = 0;
+
+            if (hasWildcard) {
+                // Resolve wildcard to all matching containers and sort each
+                const targets = resolveWildcardPath(updated, containerPath);
+                if (targets.length === 0) {
+                    throw new Error(`No containers found matching "${containerPath}"`);
+                }
+                targets.forEach(({ path: resolvedPath, value: container }) => {
+                    const { sorted, itemCount } = sortContainer(container, sortField, sortDirection);
+                    totalItems += itemCount;
+                    setAtPath(updated, resolvedPath, sorted);
+                });
+            } else {
+                // Direct path
+                const container = evaluatePath(updated, containerPath);
+                if (container === null || container === undefined) {
+                    throw new Error(
+                        `Container path "${containerPath}" not found. ` +
+                        `Run "Scan Structure" first and pick a path from the dropdown.`
+                    );
+                }
+                const { sorted, itemCount } = sortContainer(container, sortField, sortDirection);
+                totalItems = itemCount;
+                if (isArray(container)) {
+                    // array was sorted in-place — but we need to write it back since we deep-cloned
+                    setAtPath(updated, containerPath, sorted);
+                } else {
+                    setAtPath(updated, containerPath, sorted);
+                }
+            }
+
+            console.log(`[worker] SORT done — ${totalItems} items, path:"${containerPath}" field:"${sortField ?? '(keys)'}"`);
 
             self.postMessage({
                 success: true,
                 type: 'SORT_RESULT',
                 result: updated,
-                lineMap: newLineMap,
-                itemCount
+                itemCount: totalItems,
             });
         }
 
     } catch (error) {
-        self.postMessage({
-            success: false,
-            error: error.message
-        });
+        console.error('[worker] error:', error.message);
+        self.postMessage({ success: false, type: type === 'SORT' ? 'SORT_RESULT' : 'ANALYZE_RESULT', error: error.message });
     }
 };

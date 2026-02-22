@@ -57,8 +57,24 @@ app.on('ready', () => {
       mainWindow = null;
     });
   } else {
-    // Production/Standard mode: spawn Next.js
-    startNext();
+    // Production/Standard mode: Load static index.html from 'out' directory
+    const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, 'out/index.html')}`;
+    console.log(`Electron starting in production mode, loading: ${startUrl}`);
+
+    mainWindow = new BrowserWindow({
+      width: 1400,
+      height: 900,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true, // true for security
+      },
+    });
+
+    mainWindow.loadURL(startUrl);
+
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
   }
 });
 

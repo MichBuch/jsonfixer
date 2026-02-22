@@ -13,6 +13,9 @@ export interface ContainerInfo {
   depth: number;
   itemCount: number;
   availableFields?: string[]; // For arrays: common fields across items
+  sortField?: string | null;  // The specific field to sort by (null = sort by key)
+  label?: string;             // Display label for dropdown
+  isDictionary?: boolean;     // True if object is a dictionary (dynamic keys)
 }
 
 export interface StructureAnalysis {

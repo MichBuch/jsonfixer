@@ -148,7 +148,7 @@ export default function JsonEditor({
   if (!data) return null;
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: '400px' }}>
+    <div className="w-full h-full min-h-[400px]">
       <AutoSizer
         renderProp={({ height, width }: { height: number | undefined; width: number | undefined }) => {
           const w = width ?? 0;

@@ -39,39 +39,28 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
         onSelect(path);
     };
 
-    const gutterWidth = 70; // Reduced to reduce empty space
-    const contentCheck = 80 + (depth * 20); // Gutter + Margin + Indent
+    const gutterWidth = 60;
+    const contentPadding = 70 + (depth * 20); // Gutter + Margin + Indent
 
     // Render closing brace/bracket
     if (closing) {
         return (
             <div
-                style={{
-                    ...style,
-                    display: 'flex',
-                    alignItems: 'center',
-                    paddingLeft: contentCheck,
-                    fontFamily: 'monospace',
-                    fontSize: '13px',
-                    lineHeight: '20px',
-                    cursor: 'default',
-                }}
+                style={style}
+                className="flex items-center font-mono text-[13px] leading-5 text-gray-400 select-none hover:bg-white/5 transition-colors"
+                onClick={handleSelect}
             >
-                <div style={{
-                    position: 'absolute',
-                    left: 0,
-                    width: gutterWidth,
-                    textAlign: 'right',
-                    color: '#555',
-                    borderRight: '1px solid #333',
-                    paddingRight: 5,
-                    userSelect: 'none'
-                }}>
+                <div
+                    className="absolute left-0 top-0 bottom-0 text-right text-gray-600 bg-slate-900/50 border-r border-slate-700 pr-2 select-none flex items-center justify-end font-mono text-xs"
+                    style={{ width: gutterWidth }}
+                >
                     {lineNumber}
                 </div>
-                <span className="key-value" style={{ color: '#fff' }}>
-                    {type === 'object' ? '}' : ']'}{!isLast ? ',' : ''}
-                </span>
+                <div style={{ paddingLeft: contentPadding }} className="flex-1">
+                    <span className="text-white">
+                        {type === 'object' ? '}' : ']'}{!isLast ? ',' : ''}
+                    </span>
+                </div>
             </div>
         );
     }
@@ -85,94 +74,71 @@ const VirtualJsonNode: React.FC<VirtualJsonNodeProps> = memo(({ item, style, onT
         return keyStr.includes(term) || valStr.includes(term);
     })();
 
-    const rowStyle: React.CSSProperties = {
-        ...style,
-        display: 'flex',
-        alignItems: 'center',
-        paddingLeft: contentCheck,
-        fontFamily: 'monospace', // Keep original font family
-        fontSize: '13px', // Keep original font size
-        lineHeight: '20px',
-        cursor: 'pointer',
-        background: searchMatch ? 'rgba(255, 255, 0, 0.15)' : isSelected ? 'rgba(0, 255, 255, 0.15)' : 'transparent',
-        borderLeft: searchMatch ? '3px solid #ffff00' : (isSelected ? '2px solid cyan' : '2px solid transparent'),
-    };
+    // Dynamic classes based on state
+    const bgClass = searchMatch ? 'bg-yellow-500/20' : isSelected ? 'bg-cyan-500/10' : 'hover:bg-white/5';
+    const borderClass = searchMatch ? 'border-l-[3px] border-yellow-400' : isSelected ? 'border-l-2 border-cyan-400' : 'border-l-2 border-transparent';
 
     return (
         <div
             onClick={handleSelect}
-            style={rowStyle}
-            className="virtual-row"
+            style={style}
+            className={`flex items-center font-mono text-[13px] leading-5 cursor-pointer transition-colors ${bgClass} ${borderClass}`}
         >
             {/* Line Number */}
-            <div style={{
-                position: 'absolute',
-                left: 0,
-                width: gutterWidth,
-                textAlign: 'right',
-                color: '#555',
-                borderRight: '1px solid #333',
-                paddingRight: 5,
-                userSelect: 'none',
-                height: '100%',
-                background: '#1e293b' // Match background
-            }}>
+            <div
+                className="absolute left-0 top-0 bottom-0 text-right text-gray-500 bg-slate-900 border-r border-slate-700 pr-2 select-none flex items-center justify-end font-mono text-xs z-10"
+                style={{ width: gutterWidth }}
+            >
                 {lineNumber}
                 {originalLine && originalLine !== lineNumber && (
-                    <span style={{ color: '#888', marginLeft: 4, fontSize: '11px' }}>
+                    <span className="text-gray-600 ml-1 text-[10px]">
                         ({originalLine})
                     </span>
                 )}
             </div>
 
-            {/* Expand/Collapse Toggle */}
-            <div
-                onClick={isExpandable ? handleToggle : undefined}
-                style={{
-                    width: 12,
-                    marginRight: 4,
-                    cursor: isExpandable ? 'pointer' : 'default',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    userSelect: 'none',
-                    fontSize: '10px'
-                }}
-            >
-                {isExpandable && (isExpanded ? '▼' : '▶')}
-            </div>
+            <div style={{ paddingLeft: contentPadding }} className="flex items-center w-full">
+                {/* Expand/Collapse Toggle */}
+                <div
+                    onClick={isExpandable ? handleToggle : undefined}
+                    className={`w-4 mr-1 flex justify-center select-none text-[10px] text-gray-400 ${isExpandable ? 'cursor-pointer hover:text-cyan-400' : 'invisible'}`}
+                >
+                    {isExpandable && (isExpanded ? '▼' : '▶')}
+                </div>
 
-            {/* Key */}
-            {keyName !== undefined && (
-                <span className="key-name" style={{ color: '#9cdcfe', marginRight: 5 }}>
-                    {JSON.stringify(keyName)}:
-                </span>
-            )}
-
-            {/* Value Preview */}
-            <span className="key-value" style={{ color: '#ce9178', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {isExpandable ? (
-                    <>
-                        <span style={{ color: '#fff' }}>{type === 'object' ? '{' : '['}</span>
-                        {!isExpanded && (
-                            <span style={{ color: '#888', fontStyle: 'italic', margin: '0 4px' }}>...</span>
-                        )}
-                        {!isExpanded && (
-                            <span style={{ color: '#fff' }}>{type === 'object' ? '}' : ']'}{!isLast ? ',' : ''}</span>
-                        )}
-                    </>
-                ) : (
-                    <>
-                        <span style={{
-                            color: typeof value === 'string' ? '#ce9178' :
-                                typeof value === 'number' ? '#b5cea8' :
-                                    '#569cd6'
-                        }}>
-                            {JSON.stringify(value)}
-                        </span>
-                        <span style={{ color: '#fff' }}>{!isLast ? ',' : ''}</span>
-                    </>
+                {/* Key */}
+                {keyName !== undefined && (
+                    <span className="text-sky-300 mr-1.5 break-keep">
+                        {JSON.stringify(keyName)}:
+                    </span>
                 )}
-            </span>
+
+                {/* Value Preview */}
+                <span className="text-[#ce9178] truncate">
+                    {isExpandable ? (
+                        <>
+                            <span className="text-white">{type === 'object' ? '{' : '['}</span>
+                            {!isExpanded && (
+                                <span className="text-gray-500 italic mx-1">...</span>
+                            )}
+                            {!isExpanded && (
+                                <span className="text-white">{type === 'object' ? '}' : ']'}{!isLast ? ',' : ''}</span>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <span className={
+                                typeof value === 'string' ? 'text-[#ce9178]' :
+                                    typeof value === 'number' ? 'text-[#b5cea8]' :
+                                        'text-[#569cd6]'
+                            }>
+                                {JSON.stringify(value)}
+                            </span>
+                            <span className="text-white">{!isLast ? ',' : ''}</span>
+                        </>
+                    )}
+                </span>
+            </div>
         </div>
     );
 });

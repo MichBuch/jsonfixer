@@ -14,7 +14,6 @@
 
 body {
   margin: 0;
-
   font-family: 'Consolas', 'Monaco', monospace;
   background: var(--bg);
   color: var(--text);
@@ -144,8 +143,8 @@ body.resizing {
 
 .pane-content {
   flex: 1;
-  overflow: auto;
-  padding: 1rem;
+  overflow: hidden;
+  position: relative;
 }
 
 .edits-pane {
@@ -170,7 +169,6 @@ body.resizing {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
   line-height: 20px;
-  /* Match Source/JsonRaw line-height */
   letter-spacing: normal;
 }
 
@@ -189,7 +187,6 @@ body.resizing {
   font-size: 13px;
   z-index: 10;
   background-color: var(--bg);
-  /* Ensure it sits on top of any potential overlap */
 }
 
 .tree-key {
@@ -197,7 +194,6 @@ body.resizing {
   align-items: center;
   gap: 0.25rem;
   padding: 0 4px;
-  /* Reduced vertical padding to keep 20px line height */
   border-radius: 2px;
   cursor: default;
   font-family: 'Consolas', 'Monaco', monospace;
@@ -350,4 +346,21 @@ body.resizing {
   border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--muted);
+}
+
+/* Header pane buttons */
+.header-btn {
+  background: var(--border);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.header-btn:hover {
+  background: var(--accent);
+  color: #000;
 }

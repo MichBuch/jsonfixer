@@ -1,20 +1,41 @@
 import React from 'react';
 
 interface LoadingOverlayProps {
-    isLoading: boolean;
-    message?: string;
+  isLoading: boolean;
+  message?: string;
+  onCancel?: () => void;
 }
 
-const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ isLoading, message = "Loading..." }) => {
-    if (!isLoading) return null;
+const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ isLoading, message = "Loading...", onCancel }) => {
+  if (!isLoading) return null;
 
-    return (
-        <div className="loading-overlay">
-            <div className="loading-content">
-                <div className="hourglass"></div>
-                <div className="loading-text">{message}</div>
-            </div>
-            <style jsx>{`
+  return (
+    <div className="loading-overlay">
+      <div className="loading-content">
+        <div className="hourglass"></div>
+        <div className="loading-text">{message}</div>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            style={{
+              marginTop: '1rem',
+              padding: '0.5rem 1rem',
+              background: 'rgba(255, 0, 0, 0.2)',
+              border: '1px solid #ff4444',
+              color: '#ff4444',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              textTransform: 'uppercase',
+              fontWeight: 'bold',
+              letterSpacing: '1px'
+            }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+      <style jsx>{`
         .loading-overlay {
           position: fixed;
           top: 0;
@@ -82,8 +103,8 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ isLoading, message = "L
           }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 };
 
 export default LoadingOverlay;

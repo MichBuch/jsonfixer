@@ -16,7 +16,6 @@ import {
   type StructureAnalysis
 } from "./utils/pathAnalyzer";
 import { generateLargeTestData } from "./utils/testDataGenerator";
-import { sortContainer as _sortContainer, type SortReport } from "./lib/sorter";
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 type JsonObject = { [key: string]: JsonValue };
@@ -52,17 +51,13 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isFileLoading, setIsFileLoading] = useState<boolean>(false);
   const [manualSortField, setManualSortField] = useState<string>("");
-  const [scanStatusMsg, setScanStatusMsg] = useState<string>("");
-  const scanStartRef = useRef<number>(0);
   const [leftSearch, setLeftSearch] = useState<string>("");
   const [rightSearch, setRightSearch] = useState<string>("");
   const [debouncedLeftSearch, setDebouncedLeftSearch] = useState<string>("");
   const [debouncedRightSearch, setDebouncedRightSearch] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [editorViewMode, setEditorViewMode] = useState<"tree" | "text">("text");
-  const [lastSortReport, setLastSortReport] = useState<SortReport | null>(null);
+  const [editorViewMode, setEditorViewMode] = useState<"tree" | "text">("tree");
   const workerRef = useRef<Worker | null>(null);
-  const sortParamsRef = useRef<{ containerPath: string; sortField: string; countBefore: number; direction: "asc" | "desc"; startMs: number } | null>(null);
   const leftSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rightSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const protectedDropdownRef = useRef<HTMLDetailsElement>(null);
@@ -82,37 +77,14 @@ export default function Home() {
           if (result.lineMap) setLineMap(result.lineMap);
           setIsAnalyzing(false);
           setIsFileLoading(false);
-          // Show scan duration
-          if (scanStartRef.current > 0) {
-            const elapsed = Date.now() - scanStartRef.current;
-            const h = String(Math.floor(elapsed / 3600000)).padStart(2, '0');
-            const m = String(Math.floor((elapsed % 3600000) / 60000)).padStart(2, '0');
-            const s = String(Math.floor((elapsed % 60000) / 1000)).padStart(2, '0');
-            setScanStatusMsg(`Scanned in ${h}:${m}:${s}`);
-            scanStartRef.current = 0;
-          }
         } else if (type === 'SORT_RESULT') {
-          // Build sort report
-          const params = sortParamsRef.current;
-          const countAfter: number = itemCount ?? 0;
-          setLastSortReport({
-            containerPath: params?.containerPath ?? "",
-            sortKey: params?.sortField ?? "",
-            direction: params?.direction ?? "asc",
-            countBefore: countAfter,
-            countAfter,
-            integrityPassed: true,
-            movementLog: [],
-            durationMs: params ? Date.now() - params.startMs : 0,
-          });
-
           // Push current state to undo history before updating
           setUndoHistory(prev => [...prev, { data: editedData as JsonObject, lineMap: lineMap }]);
 
           setEditedData(result);
           if (e.data.lineMap) setLineMap(e.data.lineMap);
           setIsSorting(false);
-          console.log(`✓ Sort complete: ${itemCount} items sorted. LineMap size: ${e.data.lineMap?.size}`);
+          console.log(`Ô£ô Sort complete: ${itemCount} items sorted. LineMap size: ${e.data.lineMap?.size}`);
         }
       } else {
         console.error(error);
@@ -163,8 +135,6 @@ export default function Home() {
 
       setAnalysisSkipped(false);
       setIsAnalyzing(true);
-      setScanStatusMsg("Scanning...");
-      scanStartRef.current = Date.now();
       // Send to worker for initial analysis and Line Map generation
       workerRef.current.postMessage({
         type: 'ANALYZE',
@@ -195,7 +165,7 @@ export default function Home() {
     // Auto-collapse for large test data
     const topKeys = new Set(Object.keys(mutableData));
     setCollapsedPaths(topKeys.size > 100 ? topKeys : new Set());
-    setEditorViewMode('text');
+    setEditorViewMode(topKeys.size > 100 ? 'text' : 'tree');
   };
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -221,12 +191,13 @@ export default function Home() {
           return sum + (Array.isArray(v) ? v.length : (v && typeof v === 'object' ? Object.keys(v).length : 1));
         }, 0);
         if (totalElements > 500) {
+          // Collapse all top-level keys so right panel renders instantly
           setCollapsedPaths(new Set(topKeys));
           setEditorViewMode('text');
-          console.log(`Large file detected (${totalElements} elements) — auto-switched to Text View`);
+          console.log(`Large file detected (${totalElements} elements) ÔÇö auto-switched to Text View`);
         } else {
           setCollapsedPaths(new Set());
-          setEditorViewMode('text');
+          setEditorViewMode('tree');
         }
 
         // Send to worker for initial analysis and Line Map generation
@@ -269,9 +240,9 @@ export default function Home() {
     setTimeout(() => {
       try {
         JSON.stringify(editedData);
-        setValidation({ ok: true, msg: "✓ Valid JSON" });
+        setValidation({ ok: true, msg: "Ô£ô Valid JSON" });
       } catch (e: any) {
-        setValidation({ ok: false, msg: `✗ Invalid: ${e.message}` });
+        setValidation({ ok: false, msg: `Ô£ù Invalid: ${e.message}` });
       }
       setIsProcessing(false);
     }, 50);
@@ -390,7 +361,7 @@ export default function Home() {
                   setSourceData(largeData);
                   setEditedData(JSON.parse(JSON.stringify(largeData)));
                   // Add checkmark to console
-                  console.log(`✓ Generated 1,000 rows at ${new Date().toLocaleTimeString()}`);
+                  console.log(`Ô£ô Generated 1,000 rows at ${new Date().toLocaleTimeString()}`);
                   alert('Generated 1,000 rows of test data!');
                 }
               } catch (e) {
@@ -405,18 +376,8 @@ export default function Home() {
           style={{ background: '#ff6600', borderColor: '#ff6600', opacity: isGenerating ? 0.7 : 1 }}
           title="Generate 1,000 randomized rows from current data structure"
         >
-          {isGenerating ? "Generating..." : "🔥 Generate 1k rows"}
+          {isGenerating ? "Generating..." : "­ƒöÑ Generate 1k rows"}
         </button>
-        {scanStatusMsg && (
-          <span style={{
-            color: isAnalyzing ? "#fbbf24" : "#4ade80",
-            fontSize: "12px",
-            fontFamily: "monospace",
-            whiteSpace: "nowrap",
-          }}>
-            {scanStatusMsg}
-          </span>
-        )}
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto", flexWrap: "wrap" }}>
           <input
             type="text"
@@ -436,37 +397,24 @@ export default function Home() {
             }}
           />
           <datalist id="container-paths">
-            {containerOptions.map((c, idx) => (
-              <option
-                key={`${c.path}-${c.sortField ?? 'key'}-${idx}`}
-                value={c.sortField ? `${c.path}.${c.sortField}` : c.path}
-                label={`${c.itemCount} items`}
-              />
-            ))}
+            {containerOptions.map((c) => <option key={c.path} value={c.path} />)}
           </datalist>
 
-          {editedData && (
-            <button
-              onClick={() => {
-                if (editedData && workerRef.current) {
-                  setAnalysisSkipped(false);
-                  setIsAnalyzing(true);
-                  setScanStatusMsg("Scanning...");
-                  scanStartRef.current = Date.now();
-                  workerRef.current.postMessage({
-                    type: 'ANALYZE',
-                    data: editedData,
-                    jsonString: JSON.stringify(editedData, null, 2)
-                  });
-                }
-              }}
-              disabled={isAnalyzing}
-              style={{ background: "#9c27b0", borderColor: "#9c27b0", opacity: isAnalyzing ? 0.7 : 1 }}
-              title="Scan JSON structure to populate sort path dropdown"
-            >
-              {isAnalyzing ? "Scanning..." : "🔍 Scan Structure"}
-            </button>
-          )}
+          <input
+            type="text"
+            placeholder="Field (optional)"
+            value={manualSortField}
+            onChange={(e) => setManualSortField(e.target.value)}
+            title="Sort field (e.g. name, type, classification[0]) - Leave empty if sorting object keys or simple array"
+            style={{
+              padding: "0.4rem",
+              background: "#0a1929",
+              color: "var(--text)",
+              border: "1px solid #00ffff",
+              borderRadius: "4px",
+              width: "120px"
+            }}
+          />
 
           {analysisSkipped && (
             <button
@@ -474,8 +422,6 @@ export default function Home() {
                 if (editedData && workerRef.current) {
                   setAnalysisSkipped(false);
                   setIsAnalyzing(true);
-                  setScanStatusMsg("Scanning...");
-                  scanStartRef.current = Date.now();
                   workerRef.current.postMessage({
                     type: 'ANALYZE',
                     data: editedData,
@@ -494,7 +440,7 @@ export default function Home() {
 
           <details ref={protectedDropdownRef} style={{ position: "relative" }}>
             <summary style={{ padding: "0.4rem", background: "var(--border)", color: "var(--text)", border: "1px solid #00ffff", borderRadius: "4px", cursor: "pointer", listStyle: "none", userSelect: "none" }}>
-              🔒 Protected ({protectedPaths.size})
+              ­ƒöÆ Protected ({protectedPaths.size})
             </summary>
             <div style={{ position: "absolute", top: "100%", right: 0, marginTop: "0.25rem", background: "var(--surface)", border: "1px solid #00ffff", borderRadius: "4px", padding: "0.5rem", minWidth: "470px", maxHeight: "300px", overflow: "auto", zIndex: 1000 }}>
               {[...protectedContainers.map((c) => c.path)].map((path) => (
@@ -522,57 +468,65 @@ export default function Home() {
           </select>
 
           <select value={sortDirection} onChange={(e) => setSortDirection(e.target.value as "asc" | "desc")} style={{ padding: "0.4rem", background: "var(--surface)", color: "var(--text)", border: "1px solid #00ffff", borderRadius: "4px" }}>
-            <option value="asc">A→Z</option>
-            <option value="desc">Z→A</option>
+            <option value="asc">AÔåÆZ</option>
+            <option value="desc">ZÔåÆA</option>
           </select>
           <button
             onClick={() => {
-              if (!editedData || !sortContainer) {
-                alert('Please enter a sort path first');
+              if (!editedData || !sortContainer) return;
+
+              // Parse the full path to extract container and field
+              let containerPath = sortContainer;
+              let sortField = manualSortField; // Default to manual input if provided
+
+              // If manual input is empty, try to derive from analyzed options
+              if (!sortField) {
+                const selectedOpt = containerOptions.find(c => c.path === sortContainer);
+                if (selectedOpt?.availableFields?.length === 1) {
+                  sortField = selectedOpt.availableFields[0];
+                  // Remove field from container path if it was appended (legacy logic for single-field arrays)
+                  // But since we separated inputs, the container path should technically be the container.
+                  // However, for backwards compatibility with the dropdown logic:
+                  if (selectedOpt.path.endsWith('.' + sortField)) {
+                    // container path in options might be 'view.classes', or 'view.classes.name'
+                    // based on getSortableContainers logic:
+                    // "path: `${container.path}.${field}`" was added for arrays.
+                    // So if we selected one of those, the actual container is the parent.
+                    const lastDotIndex = sortContainer.lastIndexOf('.');
+                    if (lastDotIndex > 0) containerPath = sortContainer.substring(0, lastDotIndex);
+                  }
+                }
+              }
+
+              // Check if this path is protected
+              if (isPathProtected(containerPath, Array.from(protectedPaths))) {
+                alert(`"${containerPath}" is protected and cannot be sorted`);
                 return;
               }
 
-              const selectedPath = sortContainer.trim();
-
-              // Match against containerOptions to find container path + sort field
-              const match = (containerOptions as any[]).find((c: any) => {
-                const fullPath = c.sortField ? `${c.path}.${c.sortField}` : c.path;
-                return fullPath === selectedPath;
-              });
-
-              const containerPath = match?.path ?? selectedPath;
-              const sortField = match?.sortField ?? undefined;
-
-              console.log(`[sort] Sending — container: "${containerPath}", field: "${sortField ?? '(keys)'}", dir: "${sortDirection}"`);
-
-              // Store params for the report
-              sortParamsRef.current = {
-                containerPath,
-                sortField: sortField ?? "",
-                countBefore: -1, // Will be set from worker response
-                direction: sortDirection,
-                startMs: Date.now(),
-              };
-
+              // Show loading state
               setIsSorting(true);
 
               if (workerRef.current) {
+                // Send data to worker
                 workerRef.current.postMessage({
                   type: 'SORT',
                   data: editedData,
                   containerPath,
-                  sortField,
+                  sortField: manualSortField || undefined,
                   sortDirection,
-                  lineMap,
+                  lineMap: lineMap
                 });
               } else {
-                console.error('[sort] Worker not initialized');
+                console.error("Worker not initialized");
                 setIsSorting(false);
               }
+
+
             }}
-            title="Sort the selected container"
+            title="Sort using inputs above"
             style={{ padding: "0.4rem 0.8rem", fontWeight: "bold" }}
-            disabled={isSorting || !sortContainer}
+            disabled={isSorting}
           >
             {isSorting ? "Sorting..." : "Sort"}
           </button>
@@ -588,7 +542,7 @@ export default function Home() {
             title="Undo last change"
             style={{ padding: "0.4rem 0.8rem" }}
           >
-            ↶ Undo
+            ÔåÂ Undo
           </button>
         </div>
         <button onClick={validate}>Validate</button>
@@ -601,43 +555,6 @@ export default function Home() {
         {loadError && <span className="validation-err">{loadError}</span>}
       </div>
 
-      {/* Sort Report bar — shown after every sort, stays on undo */}
-      {lastSortReport && (
-        <div style={{
-          padding: "0.3rem 1rem",
-          background: lastSortReport.integrityPassed ? "rgba(74,222,128,0.08)" : "rgba(239,68,68,0.12)",
-          borderBottom: `1px solid ${lastSortReport.integrityPassed ? "#4ade80" : "#ef4444"}`,
-          display: "flex", gap: "1.5rem", alignItems: "center", flexWrap: "wrap",
-          fontSize: "12px", fontFamily: "monospace", flexShrink: 0
-        }}>
-          <span style={{ color: lastSortReport.integrityPassed ? "#4ade80" : "#ef4444", fontWeight: "bold" }}>
-            {lastSortReport.integrityPassed ? "✓ Sort OK" : "✗ Sort FAILED"}
-          </span>
-          <span>path: <b>{lastSortReport.containerPath}</b></span>
-          <span>key: <b>{lastSortReport.sortKey || "(keys)"}</b> {lastSortReport.direction}</span>
-          <span>before: <b>{lastSortReport.countBefore}</b> → after: <b>{lastSortReport.countAfter}</b></span>
-          <span style={{ color: "#888" }}>{lastSortReport.durationMs}ms</span>
-          {lastSortReport.error && <span style={{ color: "#ef4444" }}>{lastSortReport.error}</span>}
-          {lastSortReport.integrityPassed && lastSortReport.movementLog.length > 0 && (
-            <button
-              onClick={() => {
-                const r = lastSortReport;
-                const header = `Movement Log | path: ${r.containerPath} | key: ${r.sortKey} | dir: ${r.direction} | ${new Date().toISOString()}\nTotal elements: ${r.countBefore}\n\n`;
-                const rows = r.movementLog.map(e => `[${e.oldIndex}] line ${e.fromLine} → line ${e.toLine}  key: ${e.keyValue}`).join("\n");
-                const blob = new Blob([header + rows], { type: "text/plain" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a"); a.href = url; a.download = "movement-log.txt"; a.click();
-                URL.revokeObjectURL(url);
-              }}
-              style={{ padding: "0.15rem 0.5rem", fontSize: "11px", background: "transparent", border: "1px solid #4ade80", color: "#4ade80", borderRadius: "3px", cursor: "pointer" }}
-            >
-              ⬇ Movement Log ({lastSortReport.movementLog.length})
-            </button>
-          )}
-          <button onClick={() => setLastSortReport(null)} style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#888", cursor: "pointer", fontSize: "14px" }}>✕</button>
-        </div>
-      )}
-
       {editedData && sourceData && (
         <div className="panes">
           <div className="pane" style={{ width: `${leftPaneWidth}%` }}>
@@ -645,7 +562,7 @@ export default function Home() {
             <div style={{ padding: '8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
               <input
                 type="text"
-                placeholder="🔍 Search source..."
+                placeholder="­ƒöì Search source..."
                 value={leftSearch}
                 onChange={(e) => {
                   setLeftSearch(e.target.value);
@@ -682,7 +599,7 @@ export default function Home() {
                   style={{ background: editorViewMode === 'text' ? '#00ffff33' : undefined }}
                   title="Toggle between Tree View and Text View"
                 >
-                  {editorViewMode === 'tree' ? '📄 Text View' : '🌳 Tree View'}
+                  {editorViewMode === 'tree' ? '­ƒôä Text View' : '­ƒî│ Tree View'}
                 </button>
                 {editorViewMode === 'tree' && (
                   <>
@@ -691,14 +608,14 @@ export default function Home() {
                       className="header-btn"
                       title="Collapse All"
                     >
-                      ▶ Collapse
+                      ÔûÂ Collapse
                     </button>
                     <button
                       onClick={expandAll}
                       className="header-btn"
                       title="Expand All"
                     >
-                      ▼ Expand
+                      Ôû╝ Expand
                     </button>
                   </>
                 )}
@@ -707,7 +624,7 @@ export default function Home() {
             <div style={{ padding: '8px', background: '#0f172a', borderBottom: '1px solid #333' }}>
               <input
                 type="text"
-                placeholder="🔍 Search editor..."
+                placeholder="­ƒöì Search editor..."
                 value={rightSearch}
                 onChange={(e) => {
                   setRightSearch(e.target.value);
@@ -753,7 +670,7 @@ export default function Home() {
             <div>
               <strong>JSON Parse Error:</strong> {jsonError.error}
             </div>
-            <button onClick={() => setJsonError(null)} style={{ padding: "0.5rem 1rem" }}>✕ Close</button>
+            <button onClick={() => setJsonError(null)} style={{ padding: "0.5rem 1rem" }}>Ô£ò Close</button>
           </div>
           <div style={{ flex: 1, overflow: "auto", padding: "1rem" }}>
             <pre style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: "13px" }}>
@@ -771,7 +688,7 @@ export default function Home() {
 
       {(isSorting || isGenerating) && (
         <div style={{ position: "fixed", bottom: "20px", right: "20px", background: "#00ffff", color: "#000", padding: "1rem 2rem", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,255,255,0.4)", fontWeight: "bold", fontSize: "16px", zIndex: 10000 }}>
-          {isGenerating ? "Data Generation in Progress..." : "⏳ Sorting large dataset..."}
+          {isGenerating ? "Data Generation in Progress..." : "ÔÅ│ Sorting large dataset..."}
         </div>
       )}
       <style jsx global>{`
