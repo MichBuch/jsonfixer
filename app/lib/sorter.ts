@@ -186,7 +186,7 @@ export function sortContainer(data: JsonValue, params: SortParams): SortResult {
   const bijectionOk =
     oldIndices.size === countBefore &&
     newIndices.size === countBefore &&
-    [...expected].every((i) => oldIndices.has(i) && newIndices.has(i));
+    Array.from(expected).every((i) => oldIndices.has(i) && newIndices.has(i));
 
   if (!bijectionOk) {
     return {

@@ -26,7 +26,7 @@ function traverse(value: JsonValue, path: string, containers: ContainerInfo[]): 
     if (objectElements.length > 0 && objectElements.length === value.length) {
       // Find shared keys across all object elements (require at least 2 for sorting to make sense)
       const keySets = objectElements.map((el) => new Set(Object.keys(el)));
-      const sharedKeys = [...keySets[0]].filter((k) =>
+      const sharedKeys = Array.from(keySets[0]).filter((k) =>
         keySets.every((s) => s.has(k))
       );
       if (sharedKeys.length > 0) {

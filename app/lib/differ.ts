@@ -25,7 +25,7 @@ export function summarizeDiff(source: JsonValue, edited: JsonValue): DiffSummary
   let removed = 0;
   let modified = 0;
 
-  for (const k of editKeys) {
+  Array.from(editKeys).forEach(k => {
     if (!srcKeys.has(k)) {
       added++;
     } else {
@@ -33,11 +33,11 @@ export function summarizeDiff(source: JsonValue, edited: JsonValue): DiffSummary
       const ev = JSON.stringify((edited as JsonObject)[k]);
       if (sv !== ev) modified++;
     }
-  }
+  });
 
-  for (const k of srcKeys) {
+  Array.from(srcKeys).forEach(k => {
     if (!editKeys.has(k)) removed++;
-  }
+  });
 
   return { added, removed, modified };
 }
