@@ -52,6 +52,8 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isFileLoading, setIsFileLoading] = useState<boolean>(false);
   const [manualSortField, setManualSortField] = useState<string>("");
+  const [txOrderText, setTxOrderText] = useState<string | null>(null);
+  const [txOrderFileName, setTxOrderFileName] = useState<string>("");
   const [scanStatusMsg, setScanStatusMsg] = useState<string>("");
   const scanStartRef = useRef<number>(0);
   const [leftSearch, setLeftSearch] = useState<string>("");
@@ -403,14 +405,81 @@ export default function Home() {
               alert('Load a JSON file first');
               return;
             }
-            setUndoHistory(prev => [...prev, { data: editedData as JsonObject, lineMap }]);
-            const sorted = sortAttributesByViewname(editedData);
-            setEditedData(sorted);
+            if (!workerRef.current) {
+              alert('Worker not ready');
+              return;
+            }
+            sortParamsRef.current = {
+              containerPath: 'view.classes.*.attributes',
+              sortField: 'viewname',
+              countBefore: -1,
+              direction: 'asc',
+              startMs: Date.now(),
+            };
+            setIsSorting(true);
+            workerRef.current.postMessage({
+              type: 'SORT_VIEWNAME',
+              data: editedData,
+            });
           }}
           style={{ background: '#e65100', borderColor: '#ff6d00' }}
-          title="Sort all attributes within each class by viewname (works on currently loaded file)"
+          title="Sort all attributes within each class by viewname (runs in worker — safe for large files)"
         >
           ⚡ Sort Attrs by Viewname
+        </button>
+        <button
+          onClick={() => {
+            if (!editedData) {
+              alert('Load a JSON file first');
+              return;
+            }
+            if (!workerRef.current) {
+              alert('Worker not ready');
+              return;
+            }
+            const doSort = (orderText: string, fileName: string) => {
+              sortParamsRef.current = {
+                containerPath: 'view.classes.*.attributes',
+                sortField: 'viewname (TX: ' + fileName + ')',
+                countBefore: -1,
+                direction: 'asc',
+                startMs: Date.now(),
+              };
+              setIsSorting(true);
+              workerRef.current!.postMessage({
+                type: 'SORT_TX',
+                data: editedData,
+                orderText,
+              });
+            };
+            if (txOrderText) {
+              // Order file already loaded — apply immediately
+              doSort(txOrderText, txOrderFileName);
+            } else {
+              // First time — prompt for order file
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.txt,.csv';
+              input.onchange = (ev) => {
+                const file = (ev.target as HTMLInputElement).files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (re) => {
+                  const text = re.target?.result as string;
+                  if (!text) { alert('Empty sort order file'); return; }
+                  setTxOrderText(text);
+                  setTxOrderFileName(file.name);
+                  doSort(text, file.name);
+                };
+                reader.readAsText(file);
+              };
+              input.click();
+            }
+          }}
+          style={{ background: '#6a1b9a', borderColor: '#ab47bc' }}
+          title={txOrderText ? `TX Sort using ${txOrderFileName} (click to apply)` : 'Pick a sort order file first, then click to apply'}
+        >
+          📋 TX Sort{txOrderText ? ` (${txOrderFileName})` : ''}
         </button>
         <button
           onClick={() => {

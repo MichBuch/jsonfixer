@@ -1,0 +1,14 @@
+class, viewname  
+"orange", "MNO CCY"
+"orange", "CCY DOM"
+"orange", "QRTY CCY"
+"orange", "ABC CCY"
+"apple", "DOM CCY"
+"apple", "FOR CCY"
+"apple", "ABC CCY"
+"apple", "BCA CCY"
+"banana", "CCC FX CCY"
+"banana", "STUB"
+"banana", "FX SPOT"
+"banana", "BEE CCY",
+banana", "CCC FX CCY"

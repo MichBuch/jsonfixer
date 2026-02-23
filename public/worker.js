@@ -404,6 +404,210 @@ self.onmessage = function (e) {
             });
         }
 
+        // ==========================================
+        // SORT_VIEWNAME
+        // Bulletproof sort: view → classes[] → attributes[] → by viewname ASC
+        // Rules:
+        //   1. ONLY touches view.classes[n].attributes — nothing else
+        //   2. Classes stay in their original order
+        //   3. Each attribute object moves as a whole unit (all properties intact)
+        //   4. Pre/post integrity check: attribute count per class must match
+        //   5. Safe for 300k+ line files — shallow clone root, deep clone only classes
+        // ==========================================
+        else if (type === 'SORT_VIEWNAME') {
+            // Step 1: Validate structure on original data
+            if (!data || typeof data !== 'object') throw new Error('Data is not an object');
+            if (!data.view || typeof data.view !== 'object') throw new Error('Missing "view" at root');
+            if (!Array.isArray(data.view.classes)) throw new Error('view.classes is not an array');
+
+            // Step 2: Shallow clone root + view, deep clone ONLY classes array
+            var clone = Object.assign({}, data);
+            clone.view = Object.assign({}, data.view);
+            clone.view.classes = JSON.parse(JSON.stringify(data.view.classes));
+            var classes = clone.view.classes;
+
+            // Step 3: Pre-sort integrity snapshot
+            var preSnapshot = [];
+            for (var ci = 0; ci < classes.length; ci++) {
+                var cls = classes[ci];
+                var attrs = (cls && Array.isArray(cls.attributes)) ? cls.attributes : null;
+                preSnapshot.push({
+                    className: cls ? cls.name : null,
+                    attrCount: attrs ? attrs.length : 0,
+                    attrKeys: attrs ? attrs.map(function(a) { return a && a.name ? a.name : '??'; }).sort() : []
+                });
+            }
+
+            // Step 4: Sort — ONLY attributes arrays, by viewname, within each class
+            var totalSorted = 0;
+            for (var si = 0; si < classes.length; si++) {
+                var sortCls = classes[si];
+                if (!sortCls || !Array.isArray(sortCls.attributes)) continue;
+                sortCls.attributes.sort(function(a, b) {
+                    var va = (a && a.viewname != null) ? String(a.viewname) : '';
+                    var vb = (b && b.viewname != null) ? String(b.viewname) : '';
+                    return va.localeCompare(vb);
+                });
+                totalSorted += sortCls.attributes.length;
+            }
+
+            // Step 5: Post-sort integrity check
+            var errors = [];
+            for (var pi = 0; pi < classes.length; pi++) {
+                var postCls = classes[pi];
+                var postAttrs = (postCls && Array.isArray(postCls.attributes)) ? postCls.attributes : null;
+                var postCount = postAttrs ? postAttrs.length : 0;
+                var postKeys = postAttrs ? postAttrs.map(function(a) { return a && a.name ? a.name : '??'; }).sort() : [];
+
+                if (postCount !== preSnapshot[pi].attrCount) {
+                    errors.push('Class[' + pi + '] "' + preSnapshot[pi].className + '": count ' + preSnapshot[pi].attrCount + ' -> ' + postCount);
+                }
+                if (JSON.stringify(postKeys) !== JSON.stringify(preSnapshot[pi].attrKeys)) {
+                    errors.push('Class[' + pi + '] "' + preSnapshot[pi].className + '": attribute names changed');
+                }
+            }
+
+            if (errors.length > 0) {
+                throw new Error('INTEGRITY FAILURE: ' + errors.join('; '));
+            }
+
+            console.log('[worker] SORT_VIEWNAME done — ' + totalSorted + ' attributes across ' + classes.length + ' classes, integrity OK');
+
+            self.postMessage({
+                success: true,
+                type: 'SORT_RESULT',
+                result: clone,
+                itemCount: totalSorted,
+            });
+        }
+
+        // ==========================================
+        // SORT_TX
+        // Sort attributes within each class according to an external order file.
+        // The order file has lines: "className", "viewname"
+        // Attributes are reordered to match that sequence exactly.
+        // Attributes NOT in the order file are appended at the end (original order).
+        // Classes stay in their original order. No data is lost.
+        //
+        // Performance (optimized for 2k+ order rows, 300k+ line JSON):
+        //   - Order file → Map<className, Map<viewname, position>> — O(1) lookup
+        //   - Only view.classes is deep-cloned, not the entire JSON tree
+        //   - Sort is O(N log N) per class, attribute lookup O(1) via position map
+        //   - Integrity: pre/post attribute count + name set comparison per class
+        // ==========================================
+        else if (type === 'SORT_TX') {
+            var txOrderText = e.data.orderText;
+            if (!txOrderText || typeof txOrderText !== 'string') {
+                throw new Error('SORT_TX: orderText is missing');
+            }
+
+            // Step 1: Parse order file into Map<className, Map<viewname, position>>
+            var txLines = txOrderText.split(/\r?\n/);
+            var txOrderMap = {};  // { className: { viewname: positionIndex } }
+            var txParsedCount = 0;
+            for (var li = 0; li < txLines.length; li++) {
+                var raw = txLines[li].trim();
+                if (!raw || raw.toLowerCase().indexOf('class') === 0) continue;
+                var qm = raw.match(/"([^"]*)"/g);
+                if (!qm || qm.length < 2) continue;
+                var txClass = qm[0].replace(/"/g, '').trim();
+                var txView = qm[1].replace(/"/g, '').trim();
+                if (!txClass || !txView) continue;
+                if (!txOrderMap[txClass]) txOrderMap[txClass] = {};
+                if (txOrderMap[txClass][txView] === undefined) {
+                    txOrderMap[txClass][txView] = Object.keys(txOrderMap[txClass]).length;
+                    txParsedCount++;
+                }
+            }
+
+            var txClassNames = Object.keys(txOrderMap);
+            if (txClassNames.length === 0) {
+                throw new Error('SORT_TX: no valid sort entries found in order file');
+            }
+            console.log('[worker] SORT_TX parsed ' + txParsedCount + ' order entries across ' + txClassNames.length + ' classes');
+
+            // Step 2: Shallow-clone root, deep-clone ONLY view.classes
+            // This avoids stringify/parse of the entire 300k-line tree.
+            // Everything outside view.classes is untouched — we spread the root
+            // and view objects, then deep-clone just the classes array.
+            if (!data || !data.view || !Array.isArray(data.view.classes)) {
+                throw new Error('SORT_TX: expected view.classes to be an array');
+            }
+            var txClone = Object.assign({}, data);
+            txClone.view = Object.assign({}, data.view);
+            txClone.view.classes = JSON.parse(JSON.stringify(data.view.classes));
+            var txClasses = txClone.view.classes;
+
+            // Step 3: Pre-snapshot for integrity
+            var txPre = [];
+            for (var tpi = 0; tpi < txClasses.length; tpi++) {
+                var tpc = txClasses[tpi];
+                var tpa = (tpc && Array.isArray(tpc.attributes)) ? tpc.attributes : null;
+                txPre.push({
+                    name: tpc ? tpc.name : null,
+                    count: tpa ? tpa.length : 0,
+                    keys: tpa ? tpa.map(function(a) { return a && a.name ? a.name : '??'; }).sort() : []
+                });
+            }
+
+            // Step 4: Sort each class's attributes using the position map
+            var txTotalSorted = 0;
+            var txUnmatched = 0;
+            for (var tsi = 0; tsi < txClasses.length; tsi++) {
+                var txCls = txClasses[tsi];
+                if (!txCls || !Array.isArray(txCls.attributes)) continue;
+                var posMap = txOrderMap[txCls.name];
+                if (!posMap) continue;
+
+                var tagged = [];
+                for (var ai = 0; ai < txCls.attributes.length; ai++) {
+                    var attr = txCls.attributes[ai];
+                    var vn = (attr && attr.viewname != null) ? String(attr.viewname).trim() : '';
+                    var pos = posMap[vn];
+                    if (pos === undefined) {
+                        pos = 1000000000 + ai;
+                        txUnmatched++;
+                    }
+                    tagged.push({ attr: attr, pos: pos, origIdx: ai });
+                }
+
+                tagged.sort(function(a, b) {
+                    if (a.pos !== b.pos) return a.pos - b.pos;
+                    return a.origIdx - b.origIdx;
+                });
+
+                txCls.attributes = tagged.map(function(t) { return t.attr; });
+                txTotalSorted += txCls.attributes.length;
+            }
+
+            // Step 5: Post-integrity check
+            var txErrors = [];
+            for (var tci = 0; tci < txClasses.length; tci++) {
+                var txPostCls = txClasses[tci];
+                var txPostAttrs = (txPostCls && Array.isArray(txPostCls.attributes)) ? txPostCls.attributes : null;
+                var txPostCount = txPostAttrs ? txPostAttrs.length : 0;
+                var txPostKeys = txPostAttrs ? txPostAttrs.map(function(a) { return a && a.name ? a.name : '??'; }).sort() : [];
+                if (txPostCount !== txPre[tci].count) {
+                    txErrors.push('Class[' + tci + '] "' + txPre[tci].name + '": count ' + txPre[tci].count + ' -> ' + txPostCount);
+                }
+                if (JSON.stringify(txPostKeys) !== JSON.stringify(txPre[tci].keys)) {
+                    txErrors.push('Class[' + tci + '] "' + txPre[tci].name + '": attribute names changed');
+                }
+            }
+            if (txErrors.length > 0) {
+                throw new Error('SORT_TX INTEGRITY FAILURE: ' + txErrors.join('; '));
+            }
+
+            console.log('[worker] SORT_TX done — ' + txTotalSorted + ' attrs reordered (' + txUnmatched + ' unmatched appended), integrity OK');
+
+            self.postMessage({
+                success: true,
+                type: 'SORT_RESULT',
+                result: txClone,
+                itemCount: txTotalSorted,
+            });
+        }
+
         else if (type === 'SORT') {
             let { containerPath, sortField, sortDirection } = e.data;
 
