@@ -1,0 +1,272 @@
+// Quick test to verify analyzeJsonStructure produces correct paths
+// Run: node test_analyze.js
+
+function isObject(val) {
+    return val !== null && typeof val === "object" && !Array.isArray(val);
+}
+function isArray(val) {
+    return Array.isArray(val);
+}
+
+function extractSortableFields(items) {
+    const allFields = new Set();
+    items.forEach((item) => {
+        if (!isObject(item)) return;
+        Object.entries(item).forEach(([key, val]) => {
+            if (val === null || typeof val !== "object") {
+                allFields.add(key);
+            } else if (isArray(val) && val.length > 0) {
+                const first = val[0];
+                if (first !== null && typeof first === "object" && !isArray(first)) {
+                    Object.entries(first).forEach(([nk, nv]) => {
+                        if (nv === null || typeof nv !== "object") {
+                            allFields.add(`${key}.${nk}`);
+                        }
+                    });
+                }
+            } else if (isObject(val)) {
+                Object.entries(val).forEach(([nk, nv]) => {
+                    if (nv === null || typeof nv !== "object") {
+                        allFields.add(`${key}.${nk}`);
+                    }
+                });
+            }
+        });
+    });
+    return Array.from(allFields).sort();
+}
+
+function detectDictionary(obj) {
+    const keys = Object.keys(obj);
+    if (keys.length < 2) return false;
+    const childVals = keys.map(k => obj[k]);
+    if (!childVals.every(v => isObject(v) && !isArray(v))) return false;
+    const firstKeys = new Set(Object.keys(childVals[0]));
+    if (firstKeys.size === 0) return false;
+    for (let i = 1; i < childVals.length; i++) {
+        const otherKeys = Object.keys(childVals[i]);
+        const overlap = otherKeys.filter(k => firstKeys.has(k)).length;
+        const similarity = overlap / Math.max(firstKeys.size, otherKeys.length);
+        if (similarity < 0.5) return false;
+    }
+    return true;
+}
+
+function analyzeJsonStructure(data) {
+    const containers = [];
+    function traverse(value, schemaPath, depth, insideDictValue) {
+        if (isArray(value)) {
+            const fields = extractSortableFields(value);
+            containers.push({
+                path: schemaPath || "root",
+                type: "array",
+                depth,
+                itemCount: value.length,
+                availableFields: fields.length > 0 ? fields : undefined,
+            });
+            if (value.length > 0 && isObject(value[0])) {
+                Object.entries(value[0]).forEach(([key, child]) => {
+                    if (isArray(child)) {
+                        traverse(child, schemaPath ? `${schemaPath}.${key}` : key, depth + 1, false);
+                    } else if (isObject(child) && detectDictionary(child)) {
+                        traverse(child, schemaPath ? `${schemaPath}.${key}` : key, depth + 1, false);
+                    }
+                });
+            }
+        } else if (isObject(value)) {
+            const isDictionary = detectDictionary(value);
+            if (isDictionary) {
+                const childVals = Object.keys(value).map(k => value[k]);
+                const fields = extractSortableFields(childVals);
+                containers.push({
+                    path: schemaPath || "root",
+                    type: "object",
+                    isDictionary: true,
+                    depth,
+                    itemCount: Object.keys(value).length,
+                    availableFields: fields.length > 0 ? fields : undefined,
+                });
+                const firstVal = value[Object.keys(value)[0]];
+                traverse(firstVal, schemaPath ? `${schemaPath}.*` : "*", depth + 1, true);
+            } else if (insideDictValue) {
+                Object.entries(value).forEach(([key, child]) => {
+                    const childPath = schemaPath ? `${schemaPath}.${key}` : key;
+                    if (isArray(child)) {
+                        traverse(child, childPath, depth + 1, false);
+                    } else if (isObject(child) && detectDictionary(child)) {
+                        traverse(child, childPath, depth + 1, false);
+                    }
+                });
+            } else {
+                containers.push({
+                    path: schemaPath || "root",
+                    type: "object",
+                    isDictionary: false,
+                    depth,
+                    itemCount: Object.keys(value).length,
+                });
+                Object.entries(value).forEach(([key, child]) => {
+                    const childPath = schemaPath ? `${schemaPath}.${key}` : key;
+                    if (isArray(child) || isObject(child)) {
+                        traverse(child, childPath, depth + 1, false);
+                    }
+                });
+            }
+        }
+    }
+    traverse(data, "", 0, false);
+    return { containers };
+}
+
+// ---- Test data ----
+const fruitCatalog = require('./public/test-data/fruit-catalog.json');
+const vehicleInventory = {
+    view: {
+        name: "Vehicle Inventory",
+        version: "2.1",
+        classes: {
+            cars: {
+                porsche: { speed: 220, breaking: 10, engine: { size: "4l", pistons: 8, lubrication: "oil", gaskets: 10, turbo: "yes", power: "petrol" } },
+                audi: { speed: 190, breaking: 5, engine: { size: "2l", pistons: 6, lubrication: "oil", gaskets: 8, turbo: "no", power: "electric" } },
+                beetle: { speed: 90, breaking: 15, engine: { size: "1l", pistons: 4, lubrication: "oil", gaskets: 4, turbo: "no", power: "diesel" } },
+            },
+        },
+    },
+};
+
+function buildDropdown(data, label) {
+    const analysis = analyzeJsonStructure(data);
+    const options = [];
+    analysis.containers.forEach(c => {
+        if (!c.path || c.path === 'root') return;
+        if (c.path.includes('[')) return;
+        if (c.type === 'object' && !c.isDictionary) return;
+        options.push(c.sortField ? `${c.path}.${c.sortField}` : c.path);
+        if (c.availableFields) {
+            c.availableFields.forEach(f => options.push(`${c.path}.${f}`));
+        }
+    });
+    const unique = [...new Set(options)];
+    console.log(`\n=== ${label} (${unique.length} paths) ===`);
+    unique.forEach(p => console.log(`  ${p}`));
+
+    // Check for data values in paths
+    const badWords = ['banana', 'pear', 'apple', 'mango', 'orange', 'grape', 'porsche', 'audi', 'beetle', 'kiwi', 'peach', 'plum'];
+    const bad = unique.filter(p => badWords.some(w => p.toLowerCase().includes(w)));
+    if (bad.length > 0) {
+        console.log(`\n  ❌ FAIL: Data values found in paths:`);
+        bad.forEach(p => console.log(`    ${p}`));
+    } else {
+        console.log(`\n  ✅ PASS: No data values in paths`);
+    }
+    return unique;
+}
+
+buildDropdown(fruitCatalog, "FRUIT CATALOG");
+buildDropdown(vehicleInventory, "VEHICLE INVENTORY (cars from test-data.ts)");
+
+// Also test the JSON file version of vehicles
+const vehicleJson = require('./public/test-data/vehicle-inventory.json');
+buildDropdown(vehicleJson, "VEHICLE INVENTORY (JSON file)");
+
+// ---- Sort tests ----
+console.log("\n\n=== SORT TESTS ===");
+
+function parsePath(path) {
+    const parts = [];
+    const re = /([^.[]+)|\[(\d+)\]/g;
+    let m;
+    while ((m = re.exec(path)) !== null) {
+        if (m[1] !== undefined) parts.push(m[1]);
+        else parts.push(`[${m[2]}]`);
+    }
+    return parts;
+}
+
+function evaluatePath(data, path) {
+    if (!path || path === "root") return data;
+    const parts = parsePath(path);
+    let current = data;
+    for (const part of parts) {
+        if (current === null || current === undefined || typeof current !== "object") return null;
+        if (part === "*") {
+            const keys = Object.keys(current);
+            if (keys.length === 0) return null;
+            current = current[keys[0]];
+        } else if (isArray(current)) {
+            const idx = parseInt(part, 10);
+            if (isNaN(idx) || idx >= current.length) return null;
+            current = current[idx];
+        } else {
+            if (!(part in current)) return null;
+            current = current[part];
+        }
+    }
+    return current;
+}
+
+function getFieldValue(obj, fieldPath) {
+    if (!fieldPath) return obj;
+    const parts = fieldPath.split(".");
+    let current = obj;
+    for (const part of parts) {
+        if (!part) continue;
+        if (current === null || typeof current !== "object") return null;
+        if (isArray(current)) { current = current[0]; if (current === undefined) return null; }
+        current = current[part];
+    }
+    if (isArray(current) && current.length > 0) return current[0];
+    return current;
+}
+
+function sortContainer(container, sortField, sortDirection) {
+    if (isObject(container)) {
+        const keys = Object.keys(container).sort((a, b) => {
+            if (sortField) {
+                const valA = getFieldValue(container[a], sortField);
+                const valB = getFieldValue(container[b], sortField);
+                const strA = String(valA ?? '');
+                const strB = String(valB ?? '');
+                return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+            }
+            return sortDirection === "asc" ? a.localeCompare(b) : b.localeCompare(a);
+        });
+        const sorted = {};
+        keys.forEach(k => sorted[k] = container[k]);
+        return { sorted, itemCount: keys.length };
+    }
+    return { sorted: container, itemCount: 0 };
+}
+
+// Test 1: Sort fruit by key (alphabetical)
+let data1 = JSON.parse(JSON.stringify(fruitCatalog));
+let container1 = evaluatePath(data1, "view.classes");
+let result1 = sortContainer(container1, null, "asc");
+let keys1 = Object.keys(result1.sorted);
+console.log(`\n1. Sort view.classes by key ASC: ${keys1.slice(0,5).join(', ')}...`);
+console.log(`   ${keys1[0] === 'apple' && keys1[keys1.length-1] === 'watermelon' ? '✅ PASS' : '❌ FAIL'}`);
+
+// Test 2: Sort fruit by fruitCode
+let data2 = JSON.parse(JSON.stringify(fruitCatalog));
+let container2 = evaluatePath(data2, "view.classes");
+let result2 = sortContainer(container2, "attributes.fruitCode", "asc");
+let keys2 = Object.keys(result2.sorted);
+console.log(`\n2. Sort view.classes by attributes.fruitCode ASC: ${keys2.slice(0,5).join(', ')}...`);
+// APL-GS < BAN-CV < GRN-PP < GRP-CS < GUV-PK ...
+console.log(`   ${keys2[0] === 'apple' ? '✅ PASS (apple first = APL-GS)' : '❌ FAIL: ' + keys2[0]}`);
+
+// Test 3: Sort cars by speed
+let data3 = JSON.parse(JSON.stringify(vehicleInventory));
+let container3 = evaluatePath(data3, "view.classes.cars");
+let result3 = sortContainer(container3, "speed", "asc");
+let keys3 = Object.keys(result3.sorted);
+console.log(`\n3. Sort view.classes.cars by speed ASC: ${keys3.join(', ')}`);
+console.log(`   ${keys3[0] === 'beetle' && keys3[2] === 'porsche' ? '✅ PASS (beetle=90, audi=190, porsche=220)' : '❌ FAIL'}`);
+
+// Test 4: Sort cars by key
+let data4 = JSON.parse(JSON.stringify(vehicleInventory));
+let container4 = evaluatePath(data4, "view.classes.cars");
+let result4 = sortContainer(container4, null, "asc");
+let keys4 = Object.keys(result4.sorted);
+console.log(`\n4. Sort view.classes.cars by key ASC: ${keys4.join(', ')}`);
+console.log(`   ${keys4[0] === 'audi' && keys4[1] === 'beetle' && keys4[2] === 'porsche' ? '✅ PASS' : '❌ FAIL'}`);

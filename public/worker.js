@@ -54,10 +54,53 @@ function extractSortableFields(items) {
 // Never produces data-value paths like view.classes.pear
 // ==========================================
 
+/**
+ * Detect whether an object is a dictionary (data-keyed) vs structural (schema-keyed).
+ *
+ * A dictionary has:
+ *   1. Multiple keys (>1) — a single-key object is structural
+ *   2. All values are objects (not primitives)
+ *   3. Values share similar structure (>50% key overlap with the first value)
+ *
+ * Examples:
+ *   { apple: {productDesc, attributes}, banana: {productDesc, attributes} } → dictionary ✓
+ *   { cars: { porsche: {...}, audi: {...} } } → structural (only 1 key)
+ *   { name: "Fruit", version: "1.0", classes: {...} } → structural (mixed value types)
+ */
+function detectDictionary(obj) {
+    const keys = Object.keys(obj);
+    if (keys.length < 2) return false; // Single-key objects are always structural
+
+    const childVals = keys.map(k => obj[k]);
+    // All values must be objects (not arrays, not primitives)
+    if (!childVals.every(v => isObject(v) && !isArray(v))) return false;
+
+    // Check structural similarity: values should share >50% of their keys
+    const firstKeys = new Set(Object.keys(childVals[0]));
+    if (firstKeys.size === 0) return false;
+
+    for (let i = 1; i < childVals.length; i++) {
+        const otherKeys = Object.keys(childVals[i]);
+        const overlap = otherKeys.filter(k => firstKeys.has(k)).length;
+        const similarity = overlap / Math.max(firstKeys.size, otherKeys.length);
+        if (similarity < 0.5) return false;
+    }
+
+    return true;
+}
+
 function analyzeJsonStructure(data) {
     const containers = [];
 
-    function traverse(value, schemaPath, depth) {
+    /**
+     * @param value        - current node
+     * @param schemaPath   - accumulated schema path (uses * for dictionary keys)
+     * @param depth        - nesting depth
+     * @param insideDictValue - true when we're inside a dictionary value template
+     *                         (after a * wildcard). In this mode we only recurse into
+     *                         arrays and nested dictionaries, NOT into every object key.
+     */
+    function traverse(value, schemaPath, depth, insideDictValue) {
         if (isArray(value)) {
             const fields = extractSortableFields(value);
             containers.push({
@@ -67,33 +110,49 @@ function analyzeJsonStructure(data) {
                 itemCount: value.length,
                 availableFields: fields.length > 0 ? fields : undefined,
             });
-            // Recurse into first item to find nested containers
-            if (value.length > 0 && (isObject(value[0]) || isArray(value[0]))) {
-                traverse(value[0], schemaPath ? `${schemaPath}[0]` : "[0]", depth + 1);
+            // Recurse into first item to find nested arrays/dictionaries
+            if (value.length > 0 && isObject(value[0])) {
+                // Inside an array item, look for nested containers
+                Object.entries(value[0]).forEach(([key, child]) => {
+                    if (isArray(child)) {
+                        traverse(child, schemaPath ? `${schemaPath}.${key}` : key, depth + 1, false);
+                    } else if (isObject(child) && detectDictionary(child)) {
+                        traverse(child, schemaPath ? `${schemaPath}.${key}` : key, depth + 1, false);
+                    }
+                });
             }
 
         } else if (isObject(value)) {
-            const keys = Object.keys(value);
-
-            // Dictionary detection: all values are objects (dynamic named keys = data, not schema)
-            const childVals = keys.map(k => value[k]);
-            const isDictionary = keys.length > 0 && childVals.every(isObject);
+            const isDictionary = detectDictionary(value);
 
             if (isDictionary) {
-                // Collect fields from dictionary values for sorting
+                const childVals = Object.keys(value).map(k => value[k]);
                 const fields = extractSortableFields(childVals);
                 containers.push({
                     path: schemaPath || "root",
                     type: "object",
                     isDictionary: true,
                     depth,
-                    itemCount: keys.length,
+                    itemCount: Object.keys(value).length,
                     availableFields: fields.length > 0 ? fields : undefined,
                 });
-                // Recurse into first value using wildcard * to find nested containers
-                // e.g. view.classes.* -> view.classes.*.attributes
-                const firstVal = value[keys[0]];
-                traverse(firstVal, schemaPath ? `${schemaPath}.*` : "*", depth + 1);
+                // Recurse into first value with wildcard — mark as inside dict value
+                const firstVal = value[Object.keys(value)[0]];
+                traverse(firstVal, schemaPath ? `${schemaPath}.*` : "*", depth + 1, true);
+
+            } else if (insideDictValue) {
+                // We're inside a dictionary value template (e.g. inside "apple" after view.classes.*)
+                // Do NOT record this as a container — it's a value template, not a sortable level.
+                // Only recurse into arrays and nested dictionaries found in this template.
+                Object.entries(value).forEach(([key, child]) => {
+                    const childPath = schemaPath ? `${schemaPath}.${key}` : key;
+                    if (isArray(child)) {
+                        traverse(child, childPath, depth + 1, false);
+                    } else if (isObject(child) && detectDictionary(child)) {
+                        traverse(child, childPath, depth + 1, false);
+                    }
+                    // Skip plain objects — they're just nested fields, not containers
+                });
 
             } else {
                 // Structural object — keys are schema, not data
@@ -102,19 +161,19 @@ function analyzeJsonStructure(data) {
                     type: "object",
                     isDictionary: false,
                     depth,
-                    itemCount: keys.length,
+                    itemCount: Object.keys(value).length,
                 });
-                keys.forEach((key) => {
-                    const child = value[key];
+                Object.entries(value).forEach(([key, child]) => {
+                    const childPath = schemaPath ? `${schemaPath}.${key}` : key;
                     if (isArray(child) || isObject(child)) {
-                        traverse(child, schemaPath ? `${schemaPath}.${key}` : key, depth + 1);
+                        traverse(child, childPath, depth + 1, false);
                     }
                 });
             }
         }
     }
 
-    traverse(data, "", 0);
+    traverse(data, "", 0, false);
     return { containers };
 }
 
@@ -294,6 +353,8 @@ self.onmessage = function (e) {
                 if (!c.path || c.path === 'root') return;
                 // Skip paths with array indices — internal traversal artifacts
                 if (c.path.includes('[')) return;
+                // Skip non-dictionary structural objects — they're not sortable containers
+                if (c.type === 'object' && !c.isDictionary) return;
 
                 // Base entry: sort container by key/index
                 containerOptions.push({

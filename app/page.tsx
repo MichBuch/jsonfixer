@@ -277,6 +277,30 @@ export default function Home() {
     }, 50);
   };
 
+  // Sort all attributes within each class by viewname (ASC).
+  // Classes stay in their original order. Each attribute object moves as a whole unit.
+  // Works with any file that has view.classes[].attributes[].viewname structure.
+  const sortAttributesByViewname = useCallback((data: JsonObject): JsonObject => {
+    const clone = JSON.parse(JSON.stringify(data));
+    const classes = (clone as any)?.view?.classes;
+    if (!Array.isArray(classes)) {
+      alert('Expected view.classes to be an array');
+      return clone;
+    }
+    let totalSorted = 0;
+    classes.forEach((cls: any) => {
+      if (!cls || !Array.isArray(cls.attributes)) return;
+      cls.attributes.sort((a: any, b: any) => {
+        const va = String(a?.viewname ?? '');
+        const vb = String(b?.viewname ?? '');
+        return va.localeCompare(vb);
+      });
+      totalSorted += cls.attributes.length;
+    });
+    console.log(`✓ Sorted ${totalSorted} attributes across ${classes.length} classes by viewname`);
+    return clone;
+  }, []);
+
   const saveCopy = () => {
     if (!editedData || !sourceFileName) return;
     setIsProcessing(true);
@@ -373,6 +397,33 @@ export default function Home() {
         </label>
         <button onClick={() => loadTestFile("fruit")}>Load fruit test</button>
         <button onClick={() => loadTestFile("cars")}>Load cars test</button>
+        <button
+          onClick={async () => {
+            try {
+              setIsFileLoading(true);
+              const resp = await fetch('/test-data/sample_copy.json');
+              if (!resp.ok) throw new Error('File not found — copy sample_copy.json to public/test-data/');
+              const json = await resp.json();
+              setSourceData(json);
+              const sorted = sortAttributesByViewname(json);
+              setEditedData(sorted);
+              setSourceFileName('sample_copy.json');
+              setLoadError(null);
+              setValidation(null);
+              setJsonError(null);
+              setCollapsedPaths(new Set());
+              setEditorViewMode('text');
+            } catch (err: any) {
+              alert(err.message);
+            } finally {
+              setIsFileLoading(false);
+            }
+          }}
+          style={{ background: '#e65100', borderColor: '#ff6d00' }}
+          title="Load sample_copy.json and sort all attributes by viewname"
+        >
+          ⚡ Sort Attrs by Viewname
+        </button>
         <button
           onClick={() => {
             if (!editedData) {
