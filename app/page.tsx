@@ -398,29 +398,17 @@ export default function Home() {
         <button onClick={() => loadTestFile("fruit")}>Load fruit test</button>
         <button onClick={() => loadTestFile("cars")}>Load cars test</button>
         <button
-          onClick={async () => {
-            try {
-              setIsFileLoading(true);
-              const resp = await fetch('/test-data/sample_copy.json');
-              if (!resp.ok) throw new Error('File not found — copy sample_copy.json to public/test-data/');
-              const json = await resp.json();
-              setSourceData(json);
-              const sorted = sortAttributesByViewname(json);
-              setEditedData(sorted);
-              setSourceFileName('sample_copy.json');
-              setLoadError(null);
-              setValidation(null);
-              setJsonError(null);
-              setCollapsedPaths(new Set());
-              setEditorViewMode('text');
-            } catch (err: any) {
-              alert(err.message);
-            } finally {
-              setIsFileLoading(false);
+          onClick={() => {
+            if (!editedData) {
+              alert('Load a JSON file first');
+              return;
             }
+            setUndoHistory(prev => [...prev, { data: editedData as JsonObject, lineMap }]);
+            const sorted = sortAttributesByViewname(editedData);
+            setEditedData(sorted);
           }}
           style={{ background: '#e65100', borderColor: '#ff6d00' }}
-          title="Load sample_copy.json and sort all attributes by viewname"
+          title="Sort all attributes within each class by viewname (works on currently loaded file)"
         >
           ⚡ Sort Attrs by Viewname
         </button>
